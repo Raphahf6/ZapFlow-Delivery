@@ -55,16 +55,25 @@ function IntegrationsContent() {
 
     // OAUTH FLOW DO MERCADO PAGO
     const handleConnectMP = () => {
-        const clientId = process.env.NEXT_PUBLIC_MP_CLIENT_ID;
-        const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/mp/callback`;
-        
-        if (!clientId) return alert("Configure o NEXT_PUBLIC_MP_CLIENT_ID no seu .env.local");
+    const clientId = process.env.NEXT_PUBLIC_MP_CLIENT_ID;
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/mp/callback`;
+    
+    // DEBUG: Vamos ver no console exatamente o que está sendo montado
+    console.log("CLIENT_ID:", clientId);
+    console.log("REDIRECT_URI:", redirectUri);
+    console.log("COMPANY_ID (STATE):", companyId);
 
-        // Passamos o ID da empresa no parâmetro "state" para o callback saber quem está logando!
-        const mpAuthUrl = `https://auth.mercadopago.com/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${companyId}&redirect_uri=${redirectUri}`;
-        
-        window.location.href = mpAuthUrl; // Manda pro site azul do MP
-    };
+    if (!clientId || !process.env.NEXT_PUBLIC_APP_URL) {
+        return alert("Erro: Variáveis de ambiente não carregadas na Vercel.");
+    }
+
+    const mpAuthUrl = `https://auth.mercadopago.com/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${companyId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    
+    console.log("URL FINAL:", mpAuthUrl);
+    
+    // Antes de redirecionar, pare e olhe o console (F12)
+    // window.location.href = mpAuthUrl; 
+};
 
     const handleDisconnectMP = async () => {
         if (!confirm("Tem certeza que deseja desconectar o Mercado Pago? Você não receberá mais pagamentos automáticos.")) return;
