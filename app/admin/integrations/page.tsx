@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 function IntegrationsContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    
+
     const [loading, setLoading] = useState(true);
     const [savingWPP, setSavingWPP] = useState(false);
     const [companyId, setCompanyId] = useState("");
@@ -40,7 +40,7 @@ function IntegrationsContent() {
                 if (data) {
                     setCompanyId(data.id);
                     if (data.mp_access_token) setIsMpConnected(true);
-                    
+
                     setWppNumber(data.whatsapp_number || "");
                     if (data.whatsapp_instance_id) {
                         setWppInstanceId(data.whatsapp_instance_id);
@@ -56,19 +56,20 @@ function IntegrationsContent() {
     // OAUTH FLOW DO MERCADO PAGO
     const handleConnectMP = () => {
         const clientId = process.env.NEXT_PUBLIC_MP_CLIENT_ID;
-        const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/mp/callback`;
-        
-        if (!clientId) return alert("Configure o NEXT_PUBLIC_MP_CLIENT_ID no seu .env.local");
+        // Garanta que não existam barras duplas aqui //
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+        const redirectUri = `${appUrl}/api/mp/callback`;
 
-        // Passamos o ID da empresa no parâmetro "state" para o callback saber quem está logando!
-        const mpAuthUrl = `https://auth.mercadopago.com/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${companyId}&redirect_uri=${redirectUri}`;
-        
-        window.location.href = mpAuthUrl; // Manda pro site azul do MP
+        if (!clientId) return alert("Configure o NEXT_PUBLIC_MP_CLIENT_ID");
+
+        const mpAuthUrl = `https://auth.mercadopago.com/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${companyId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+
+        window.location.href = mpAuthUrl;
     };
 
     const handleDisconnectMP = async () => {
         if (!confirm("Tem certeza que deseja desconectar o Mercado Pago? Você não receberá mais pagamentos automáticos.")) return;
-        
+
         const { error } = await supabase.from("Company").update({ mp_access_token: null }).eq("id", companyId);
         if (!error) {
             setIsMpConnected(false);
@@ -101,7 +102,7 @@ function IntegrationsContent() {
             </div>
 
             <div className="grid grid-cols-1 gap-8">
-                
+
                 {/* CARD: MERCADO PAGO (OAUTH) */}
                 <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-blue-50/30">
@@ -122,7 +123,7 @@ function IntegrationsContent() {
                             </span>
                         )}
                     </div>
-                    
+
                     <div className="p-6">
                         {isMpConnected ? (
                             <div className="flex flex-col items-center justify-center p-6 bg-green-50 rounded-2xl border border-green-100 space-y-4">

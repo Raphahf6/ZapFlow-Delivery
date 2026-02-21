@@ -4,55 +4,57 @@ import { supabase } from '@/lib/supabase';
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
-    const companyId = searchParams.get('state'); // Usamos o "state" para passar o ID da empresa!
-    const error = searchParams.get('error');
+    const companyId = searchParams.get('state'); // O state que enviamos no handleConnectMP
 
-    // Se o usuário cancelou o login
-    if (error || !code || !companyId) {
-        return NextResponse.redirect(new URL('/admin/integrations?error=mp_auth_failed', request.url));
+    // 1. Validação básica
+    if (!code || !companyId) {
+        console.error("Callback MP: Código ou CompanyId ausentes", { code, companyId });
+        return NextResponse.redirect(new URL('/admin/integrations?error=invalid_params', request.url));
     }
 
     try {
-        // 1. Troca o 'code' pelo 'access_token' chamando a API do Mercado Pago
-        const mpResponse = await fetch('https://api.mercadopago.com/oauth/token', {
+        // 2. Troca o código pelo Access Token
+        const response = await fetch('https://api.mercadopago.com/oauth/token', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Accept': 'application/json'
             },
             body: new URLSearchParams({
-                client_secret: process.env.MP_CLIENT_SECRET!,
                 client_id: process.env.NEXT_PUBLIC_MP_CLIENT_ID!,
+                client_secret: process.env.MP_CLIENT_SECRET!,
                 grant_type: 'authorization_code',
                 code: code,
                 redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL}/api/mp/callback`
             })
         });
 
-        const mpData = await mpResponse.json();
+        const data = await response.json();
 
-        if (!mpResponse.ok) {
-            console.error("Erro MP:", mpData);
-            throw new Error('Falha ao autenticar no Mercado Pago');
+        if (!response.ok) {
+            console.error("Erro na troca de token MP:", data);
+            return NextResponse.redirect(new URL('/admin/integrations?error=mp_token_exchange_failed', request.url));
         }
 
-        // 2. Salva o Token no Supabase para a empresa correta
+        // 3. SALVAR NO SUPABASE
+        // Importante: Usamos o companyId que veio no 'state'
         const { error: dbError } = await supabase
             .from('Company')
             .update({ 
-                mp_access_token: mpData.access_token,
-                // Se quiser salvar o refresh token no futuro, crie a coluna e adicione aqui:
-                // mp_refresh_token: mpData.refresh_token 
+                mp_access_token: data.access_token 
             })
             .eq('id', companyId);
 
-        if (dbError) throw dbError;
+        if (dbError) {
+            console.error("Erro ao salvar token no banco:", dbError);
+            return NextResponse.redirect(new URL('/admin/integrations?error=db_save_failed', request.url));
+        }
 
-        // 3. Redireciona de volta para a tela de integrações com sucesso
+        // 4. Sucesso!
         return NextResponse.redirect(new URL('/admin/integrations?success=mp_connected', request.url));
 
-    } catch (err) {
-        console.error("Erro no Callback do MP:", err);
+    } catch (error) {
+        console.error("Erro crítico no callback MP:", error);
         return NextResponse.redirect(new URL('/admin/integrations?error=server_error', request.url));
     }
 }
