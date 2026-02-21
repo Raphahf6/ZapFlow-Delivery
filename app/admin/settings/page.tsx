@@ -26,7 +26,6 @@ export default function SettingsPage() {
     const [storeCategory, setStoreCategory] = useState("Adega e Bebidas");
     const [schedule, setSchedule] = useState<ScheduleType>(defaultSchedule);
     
-    // Novos Estados de Endereço (ViaCEP)
     const [currentAddressLabel, setCurrentAddressLabel] = useState("");
     const [cep, setCep] = useState("");
     const [street, setStreet] = useState("");
@@ -35,7 +34,6 @@ export default function SettingsPage() {
     const [city, setCity] = useState("");
     const [isSearchingCep, setIsSearchingCep] = useState(false);
 
-    // Regras de Entrega
     const [baseKm, setBaseKm] = useState(5);
     const [baseFee, setBaseFee] = useState(5);
     const [extraFee, setExtraFee] = useState(8);
@@ -56,8 +54,10 @@ export default function SettingsPage() {
                     setName(data.name || "");
                     setStoreCategory(data.store_category || "Adega e Bebidas");
                     setCurrentAddressLabel(data.address || "Nenhum endereço cadastrado.");
-                    setLogoUrl(data.logo_url || "");
-                    setBannerUrl(data.banner_url || "");
+                    
+                    // Só seta no estado se não for um blob quebrado salvo por engano
+                    if (data.logo_url && !data.logo_url.startsWith('blob:')) setLogoUrl(data.logo_url);
+                    if (data.banner_url && !data.banner_url.startsWith('blob:')) setBannerUrl(data.banner_url);
                     
                     if (data.business_hours && Object.keys(data.business_hours).length > 0) {
                         setSchedule({ ...defaultSchedule, ...data.business_hours });
@@ -123,6 +123,10 @@ export default function SettingsPage() {
             let finalBannerUrl = bannerUrl;
             let lat = null, lng = null;
 
+            // Prevenção absoluta: Se for blob, zera antes de enviar pro banco
+            if (finalLogoUrl.startsWith('blob:')) finalLogoUrl = "";
+            if (finalBannerUrl.startsWith('blob:')) finalBannerUrl = "";
+
             const fullAddress = (street && number && city) 
                 ? `${street}, ${number} - ${neighborhood}, ${city}` 
                 : currentAddressLabel;
@@ -137,26 +141,32 @@ export default function SettingsPage() {
                     if (geoData && geoData.length > 0) {
                         lat = parseFloat(geoData[0].lat);
                         lng = parseFloat(geoData[0].lon);
-                    } else {
-                        alert("Atenção: Endereço da adega não encontrado no GPS. Verifique se digitou o número correto.");
                     }
                 } catch (geoErr) {
-                    console.error("Erro na geolocalização da adega:", geoErr);
+                    console.error("Erro na geolocalização:", geoErr);
                 }
             }
 
             if (logoFile) {
                 const ext = logoFile.name.split('.').pop();
                 const fileName = `logo_${companyId}_${Math.random()}.${ext}`;
-                const { error: uploadErr } = await supabase.storage.from('products').upload(fileName, logoFile);
-                if (!uploadErr) finalLogoUrl = supabase.storage.from('products').getPublicUrl(fileName).data.publicUrl;
+                const { error: uploadErr } = await supabase.storage.from('products').upload(fileName, logoFile, { upsert: true });
+                
+                if (uploadErr) {
+                    throw new Error(`Erro no Supabase Storage (Logo): ${uploadErr.message}`);
+                }
+                finalLogoUrl = supabase.storage.from('products').getPublicUrl(fileName).data.publicUrl;
             }
 
             if (bannerFile) {
                 const ext = bannerFile.name.split('.').pop();
                 const fileName = `banner_${companyId}_${Math.random()}.${ext}`;
-                const { error: uploadErr } = await supabase.storage.from('products').upload(fileName, bannerFile);
-                if (!uploadErr) finalBannerUrl = supabase.storage.from('products').getPublicUrl(fileName).data.publicUrl;
+                const { error: uploadErr } = await supabase.storage.from('products').upload(fileName, bannerFile, { upsert: true });
+                
+                if (uploadErr) {
+                    throw new Error(`Erro no Supabase Storage (Banner): ${uploadErr.message}`);
+                }
+                finalBannerUrl = supabase.storage.from('products').getPublicUrl(fileName).data.publicUrl;
             }
 
             const payload: any = {
@@ -183,9 +193,13 @@ export default function SettingsPage() {
             setLogoFile(null);
             setBannerFile(null);
 
+            // Atualiza o visual da tela com o link público definitivo
+            setLogoUrl(finalLogoUrl);
+            setBannerUrl(finalBannerUrl);
+
         } catch (error: any) {
             console.error(error);
-            alert(`Erro ao salvar configurações: ${error.message}`);
+            alert(`Falha ao salvar: ${error.message}`);
         } finally {
             setSaving(false);
         }
