@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Loader2, MessageCircle, MapPin, Bike, CheckCircle, Clock, Banknote, CreditCard, ShoppingBag, ChevronRight, LayoutDashboard } from "lucide-react";
+import { Loader2, MessageCircle, MapPin, Bike, CheckCircle, Clock, Banknote, CreditCard, ShoppingBag, ChevronRight, LayoutDashboard, Volume2, VolumeX } from "lucide-react";
 
 type Order = {
     id: string;
@@ -27,11 +27,18 @@ const STATUS_COLUMNS = [
     { id: 'delivering', title: 'Em Rota (Entrega)', color: 'bg-blue-500', bg: 'bg-blue-50', text: 'text-blue-700' },
 ];
 
+// Link do som de caixa registradora (pode trocar por um arquivo local depois se quiser)
+const CASH_SOUND_URL = "https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3";
+
 export default function KanbanPage({ params }: { params: Promise<{ slug: string }> }) {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [companyId, setCompanyId] = useState("");
     const [companyName, setCompanyName] = useState("");
+    
+    // Estados do Áudio
+    const [isSoundOn, setIsSoundOn] = useState(false);
+    const soundRef = useRef(false); // Ref é necessário para o listener do Supabase ler o valor atualizado
 
     const slug = React.use(params).slug;
 
@@ -41,7 +48,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
 
     const loadData = async () => {
         setLoading(true);
-        // Busca o ID e o Nome da Empresa para usar no Header e no WhatsApp
         const { data: company } = await supabase.from("Company").select("id, name").eq("slug", slug).single();
         
         if (company) {
@@ -78,7 +84,16 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'Order', filter: `company_id=eq.${cId}` },
-                () => fetchOrders(cId)
+                (payload) => {
+                    // Recarrega a lista
+                    fetchOrders(cId);
+                    
+                    // Se for um NOVO pedido e o som estiver ativado
+                    if (payload.eventType === 'INSERT' && soundRef.current) {
+                        const audio = new Audio(CASH_SOUND_URL);
+                        audio.play().catch(e => console.error("Áudio bloqueado pelo navegador:", e));
+                    }
+                }
             )
             .subscribe();
 
@@ -90,34 +105,53 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
         await supabase.from("Order").update({ status: newStatus }).eq("id", orderId);
     };
 
-    // Função do WhatsApp Atualizada e Personalizada
     const openWhatsApp = (phone: string, orderId: string, customerName: string) => {
         const cleanPhone = phone.replace(/\D/g, '');
         const shortId = orderId.split('-')[0].toUpperCase();
         
-        // Mensagem dinâmica usando o Nome da Loja
         const text = `Olá ${customerName}, somos da ${companyName}! Sobre o seu pedido #${shortId}...`;
         window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
+    };
+
+    const toggleSound = () => {
+        const newState = !isSoundOn;
+        setIsSoundOn(newState);
+        soundRef.current = newState;
+        
+        // Tocar um preview para o navegador saber que você autorizou sons na página
+        if (newState) {
+            const audio = new Audio(CASH_SOUND_URL);
+            audio.volume = 0.5; // Toca mais baixinho no teste manual
+            audio.play().catch(() => console.log("Aguardando interação."));
+        }
     };
 
     if (loading) return <div className="min-h-screen flex justify-center items-center bg-gray-50"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>;
 
     return (
         <div className="min-h-screen bg-gray-100 font-sans flex flex-col">
-            {/* NOVO HEADER DO KANBAN */}
             <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
                 <div className="max-w-[1400px] mx-auto px-6 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <a href="/admin/dashboard" className="p-2 -ml-2 text-gray-400 hover:bg-gray-100 hover:text-gray-900 rounded-xl transition-colors flex items-center gap-2 font-bold text-sm">
                             <LayoutDashboard className="w-5 h-5" />
-                            <span>Voltar ao Painel</span>
+                            <span className="hidden sm:inline">Voltar ao Painel</span>
                         </a>
                         <div className="w-px h-6 bg-gray-200"></div>
                         <h1 className="font-extrabold text-xl text-gray-900 flex items-center gap-2">
                             <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
-                            {companyName} <span className="text-gray-400 font-medium text-base ml-1">| Operação Ao Vivo</span>
+                            {companyName} <span className="hidden md:inline text-gray-400 font-medium text-base ml-1">| Operação Ao Vivo</span>
                         </h1>
                     </div>
+                    
+                    {/* BOTÃO DE CONTROLE DO SOM DE CAIXA */}
+                    <button 
+                        onClick={toggleSound} 
+                        className={`px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold transition-colors shadow-sm ${isSoundOn ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                    >
+                        {isSoundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                        <span className="hidden sm:inline">{isSoundOn ? "Notificações Ligadas" : "Ativar Notificações"}</span>
+                    </button>
                 </div>
             </header>
 
