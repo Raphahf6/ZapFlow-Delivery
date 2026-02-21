@@ -42,6 +42,11 @@ export async function POST(request: Request) {
 
         const paymentData = await mpResponse.json();
 
+        await supabaseAdmin
+            .from('Order')
+            .update({ payment_id: paymentData.id.toString() })
+            .eq('id', orderId);
+
         if (!mpResponse.ok) throw new Error('Erro ao gerar Pix no Mercado Pago');
 
         // 3. Devolve os dados do Pix para o Frontend
