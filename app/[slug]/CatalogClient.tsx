@@ -52,7 +52,11 @@ function CatalogHeader({ company, isOpenNow, userDistance }: { company: any, isO
                 </div>
 
                 <div className="flex items-center gap-4 mt-4 text-sm font-medium text-gray-600">
-                    <div className="flex items-center gap-1.5"><Clock className="w-4 h-4 text-gray-400"/> 30-45 min</div>
+                    {/* Previsão alterada de mock fixo para status dinâmico */}
+                    <div className="flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-gray-400"/> 
+                        {isOpenNow ? "Entrega" : "Indisponível"}
+                    </div>
                     <div className="flex items-center gap-1.5 text-blue-600"><Bike className="w-4 h-4 text-blue-500"/> Frete a partir de R$ {baseFee.toFixed(2).replace('.', ',')}</div>
                 </div>
             </div>
@@ -116,7 +120,6 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
     const [changeFor, setChangeFor] = useState("");
     const [calculatedFee, setCalculatedFee] = useState(0);
 
-    // Estados do Pix Modal
     const [isPixModalOpen, setIsPixModalOpen] = useState(false);
     const [pixData, setPixData] = useState<any>(null);
 
@@ -144,16 +147,22 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
         setIsSearching(false);
     };
 
+    // TROCADO VIACEP POR AWESOMEAPI PARA EVITAR 429 TOO MANY REQUESTS
     const handleCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         let val = e.target.value.replace(/\D/g, '');
         setCep(val);
         if(val.length === 8) {
-             const res = await fetch(`https://viacep.com.br/ws/${val}/json/`);
-             const data = await res.json();
-             if(!data.erro) {
-                 setStreet(data.logradouro);
-                 setNeighborhood(data.bairro);
-                 setCity(data.localidade);
+             try {
+                const res = await fetch(`https://cep.awesomeapi.com.br/json/${val}`);
+                if (!res.ok) throw new Error();
+                const data = await res.json();
+                
+                setStreet(data.address || "");
+                setNeighborhood(data.district || "");
+                setCity(data.city || "");
+             } catch (error) {
+                // Fallback silencioso se falhar
+                console.error("Erro ao buscar CEP");
              }
         }
     };
@@ -172,7 +181,6 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
             let cLat = null;
             let cLng = null;
 
-            // NOVA LÓGICA ANTI-CORS (Usando a AwesomeAPI de CEP para pegar Lat/Lng)
             if (addrObj.cep) {
                 const cepRes = await fetch(`https://cep.awesomeapi.com.br/json/${addrObj.cep.replace(/\D/g, '')}`);
                 const cepData = await cepRes.json();
@@ -197,10 +205,10 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
                     setCalculatedFee(Number(rules.extraFee));
                 }
             } else {
-                setCalculatedFee(Number(rules.extraFee)); // Fallback
+                setCalculatedFee(Number(rules.extraFee)); 
             }
         } catch (err) {
-            setCalculatedFee(Number(rules.baseFee)); // Fallback silencioso
+            setCalculatedFee(Number(rules.baseFee));
         }
         setIsCalculatingDistance(false);
         setStep("CONFIRMATION");
@@ -411,9 +419,8 @@ export default function CatalogClient({ company, categories, products }: { compa
     const [activeCategory, setActiveCategory] = useState<string | null>(null);
     const [userDistance, setUserDistance] = useState<string | null>(null);
     
-    // CORREÇÃO HYDRATION ERROR (418)
     const [isClient, setIsClient] = useState(false);
-    const [isOpenNow, setIsOpenNow] = useState(true); // Otimista por padrão
+    const [isOpenNow, setIsOpenNow] = useState(true);
 
     const checkIsOpen = () => {
         if(!company?.business_hours || Object.keys(company.business_hours).length === 0) return true; 
@@ -493,7 +500,6 @@ export default function CatalogClient({ company, categories, products }: { compa
 
     const orphanProducts = filteredProducts.filter(p => !p.category_id);
 
-    // Evita renderizar UI sensível a horário antes do navegador assumir (Fix Erro 418)
     if (!isClient) return null; 
 
     return (
