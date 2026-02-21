@@ -31,19 +31,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const pathname = usePathname();
 
     useEffect(() => {
+        // Esconde o menu automaticamente no celular ao carregar a tela inicial
+        if (window.innerWidth < 768) {
+            setIsSidebarOpen(false);
+        }
+
         const checkUserAndCompany = async () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) {
                 router.push("/login");
             } else {
                 setUserEmail(user.email || "");
-                // Busca o slug da empresa para montar os links
                 const { data } = await supabase.from("Company").select("slug").eq("owner_id", user.id).single();
                 if (data) setSlug(data.slug);
             }
         };
         checkUserAndCompany();
     }, [router]);
+
+    // UX Inteligente: Fecha a sidebar no celular quando o lojista clica em um link
+    useEffect(() => {
+        if (window.innerWidth < 768) {
+            setIsSidebarOpen(false);
+        }
+    }, [pathname]);
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
@@ -57,29 +68,45 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Atualizado: O path do Kanban usa o slug carregado no estado. 
-    // O target="_blank" será aplicado ali embaixo no map.
     const menuItems = [
-    { name: "Dashboard", icon: LayoutDashboard, path: "/admin/dashboard", isExternal: false },
-    { name: "Painel Operacional", icon: ShoppingBag, path: slug ? `/kanban/${slug}` : "#", isExternal: true },
-    { name: "Catálogo", icon: Package, path: "/admin/products", isExternal: false },
-    { name: "Clientes", icon: Users, path: "/admin/customers", isExternal: false }, // <-- AQUI A TELA NOVA
-    { name: "Integrações", icon: Sparkles, path: "/admin/integrations", isExternal: false },
-    { name: "Configurações", icon: Settings2, path: "/admin/settings", isExternal: false },
-];
+        { name: "Dashboard", icon: LayoutDashboard, path: "/admin/dashboard", isExternal: false },
+        { name: "Painel Operacional", icon: ShoppingBag, path: slug ? `/kanban/${slug}` : "#", isExternal: true },
+        { name: "Catálogo", icon: Package, path: "/admin/products", isExternal: false },
+        { name: "Clientes", icon: Users, path: "/admin/customers", isExternal: false },
+        { name: "Integrações", icon: Sparkles, path: "/admin/integrations", isExternal: false },
+        { name: "Configurações", icon: Settings2, path: "/admin/settings", isExternal: false },
+    ];
 
     return (
         <div className="min-h-screen bg-gray-50 flex font-sans">
+            
+            {/* OVERLAY ESCURO PARA MOBILE */}
+            {isSidebarOpen && (
+                <div 
+                    className="fixed inset-0 bg-black/50 z-20 md:hidden transition-opacity"
+                    onClick={() => setIsSidebarOpen(false)}
+                />
+            )}
+
             {/* SIDEBAR */}
-            <aside className={`${isSidebarOpen ? "w-64" : "w-20"} bg-white border-r border-gray-200 transition-all duration-300 flex flex-col z-20`}>
-                <div className="p-6 flex items-center gap-3 text-blue-600 font-bold text-xl overflow-hidden shrink-0">
-                    <div className="bg-blue-600 p-1.5 rounded-lg shrink-0">
-                        <Store className="w-5 h-5 text-white" />
+            <aside className={`
+                fixed md:static inset-y-0 left-0 z-30 flex flex-col bg-white border-r border-gray-200 transition-all duration-300 ease-in-out
+                ${isSidebarOpen ? "translate-x-0 w-64" : "-translate-x-full w-64 md:translate-x-0 md:w-20"}
+            `}>
+                <div className="p-6 flex items-center justify-between text-blue-600 font-bold text-xl overflow-hidden shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-blue-600 p-1.5 rounded-lg shrink-0">
+                            <Store className="w-5 h-5 text-white" />
+                        </div>
+                        {isSidebarOpen && <span className="whitespace-nowrap">ZapFlow</span>}
                     </div>
-                    {isSidebarOpen && <span className="whitespace-nowrap">ZapFlow</span>}
+                    {/* Botão de Fechar Exclusivo do Mobile */}
+                    <button className="md:hidden text-gray-400 hover:text-gray-600 p-1" onClick={() => setIsSidebarOpen(false)}>
+                        <X className="w-6 h-6" />
+                    </button>
                 </div>
 
-                <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
+                <nav className="flex-1 px-4 space-y-2 mt-2 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200">
                     {menuItems.map((item) => {
                         const isActive = pathname === item.path;
                         return (
@@ -96,9 +123,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             >
                                 <item.icon className="w-5 h-5 shrink-0" />
                                 {isSidebarOpen && (
-                                    <div className="flex items-center justify-between w-full">
-                                        <span>{item.name}</span>
-                                        {item.isExternal && <ExternalLink className="w-3.5 h-3.5 opacity-50" />}
+                                    <div className="flex items-center justify-between w-full overflow-hidden">
+                                        <span className="truncate">{item.name}</span>
+                                        {item.isExternal && <ExternalLink className="w-3.5 h-3.5 opacity-50 shrink-0" />}
                                     </div>
                                 )}
                             </Link>
@@ -108,7 +135,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
                 {/* BOTÃO DE LINK PÚBLICO */}
                 {isSidebarOpen && slug && (
-                    <div className="px-4 pb-4 shrink-0">
+                    <div className="px-4 pb-4 shrink-0 mt-4">
                         <div className="bg-blue-600 rounded-2xl p-4 text-white space-y-3 shadow-lg shadow-blue-600/30">
                             <p className="text-xs font-bold uppercase opacity-80">Link da sua Loja</p>
                             <div className="bg-white/10 rounded-lg p-2 flex items-center justify-between gap-2 overflow-hidden">
@@ -144,14 +171,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </aside>
 
             {/* MAIN CONTENT */}
-            <main className="flex-1 flex flex-col overflow-hidden">
+            <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
                 {/* HEADER */}
-                <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
+                <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-8 shrink-0">
                     <button 
                         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                         className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
                     >
-                        {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                        <Menu className="w-5 h-5" />
                     </button>
 
                     <div className="flex items-center gap-4">
@@ -159,14 +186,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             <p className="text-sm font-semibold text-gray-900">Admin Adega</p>
                             <p className="text-xs text-gray-500">{userEmail}</p>
                         </div>
-                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 shrink-0">
                             <User className="w-6 h-6" />
                         </div>
                     </div>
                 </header>
 
                 {/* PAGE CONTENT */}
-                <section className="flex-1 overflow-y-auto p-8 bg-gray-50">
+                <section className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50">
                     {children}
                 </section>
             </main>

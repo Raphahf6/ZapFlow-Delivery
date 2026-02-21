@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Loader2, MessageCircle, MapPin, Bike, CheckCircle, Clock, Banknote, CreditCard, ShoppingBag, ChevronRight, Volume2, VolumeX, Printer } from "lucide-react";
+import { Loader2, MessageCircle, MapPin, Bike, CheckCircle, Clock, Banknote, CreditCard, ShoppingBag, ChevronRight, Volume2, VolumeX, Printer, XCircle } from "lucide-react";
 
 type Order = {
     id: string;
@@ -97,8 +97,18 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
     };
 
     const updateOrderStatus = async (orderId: string, newStatus: string) => {
+        // Se for cancelar, pede confirmação
+        if (newStatus === 'cancelled') {
+            if (!confirm("Tem certeza que deseja cancelar este pedido?")) return;
+        }
+
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus as any } : o));
         await supabase.from("Order").update({ status: newStatus }).eq("id", orderId);
+        
+        // Se o status for final (concluído ou cancelado), removemos da visualização do Kanban
+        if (newStatus === 'completed' || newStatus === 'cancelled') {
+            setOrders(prev => prev.filter(o => o.id !== orderId));
+        }
     };
 
     const openWhatsApp = (phone: string, orderId: string, customerName: string) => {
@@ -121,7 +131,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
         }
     };
 
-    // Nova Função: Imprimir Cupom Térmico
     const printOrder = (order: Order) => {
         const timeStr = new Date(order.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         const dateStr = new Date(order.created_at).toLocaleDateString('pt-BR');
@@ -129,7 +138,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
         const pm = order.address_details?.paymentMethod;
         const isPaid = order.payment_status === 'paid' ? 'SIM' : 'NAO';
 
-        // Gera o HTML dos itens
         const itemsHtml = order.OrderItem?.map((item: any) => `
             <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
                 <span>${item.quantity}x ${item.Product?.name || 'Produto'}</span>
@@ -137,7 +145,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
             </div>
         `).join('');
 
-        // Monta o Cupom (Estilo PDV Clássico)
         const html = `
             <html>
             <head>
@@ -148,7 +155,7 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                         font-size: 12px; 
                         margin: 0; 
                         padding: 10px; 
-                        width: 300px; /* Largura ideal para impressoras 80mm/58mm */
+                        width: 300px; 
                         color: #000; 
                     }
                     .center { text-align: center; }
@@ -161,16 +168,13 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                 <div class="center bold" style="font-size: 16px; margin-bottom: 5px;">${companyName}</div>
                 <div class="center">PEDIDO #${shortId}</div>
                 <div class="center">${dateStr} às ${timeStr}</div>
-                
                 <div class="divider"></div>
                 <div><span class="bold">CLIENTE:</span> ${order.customer_name}</div>
                 <div><span class="bold">TELEFONE:</span> ${order.customer_phone}</div>
                 <div style="margin-top: 5px;"><span class="bold">ENDERECO DE ENTREGA:</span><br/>${order.address_details?.address || 'Retirada no local'}</div>
-                
                 <div class="divider"></div>
                 <div class="bold" style="margin-bottom: 5px;">ITENS DO PEDIDO:</div>
                 ${itemsHtml}
-                
                 <div class="divider"></div>
                 ${order.address_details?.deliveryFee ? `
                 <div class="flex-between" style="margin-bottom: 5px;">
@@ -181,16 +185,13 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                     <span>TOTAL:</span>
                     <span>R$ ${Number(order.total_price).toFixed(2).replace('.', ',')}</span>
                 </div>
-                
                 <div class="divider"></div>
                 <div><span class="bold">PAGAMENTO:</span> ${pm}</div>
                 <div><span class="bold">STATUS:</span> ${isPaid === 'SIM' ? 'PAGO' : 'A COBRAR'}</div>
                 ${pm === 'DINHEIRO' && order.address_details?.changeFor ? `<div style="margin-top: 5px; font-size: 14px;"><span class="bold">LEVAR TROCO PARA:</span> R$ ${Number(order.address_details.changeFor).toFixed(2).replace('.', ',')}</div>` : ''}
-                
                 <div class="divider"></div>
                 <div class="center" style="margin-top: 20px;">Obrigado pela preferencia!</div>
                 <div class="center" style="margin-top: 5px; font-size: 10px;">Gerado por ZapFlow</div>
-                
                 <script>
                     window.onload = function() { 
                         window.print(); 
@@ -201,7 +202,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
             </html>
         `;
 
-        // Abre uma janela invisível/pequena e dispara o print
         const printWindow = window.open('', '_blank', 'width=400,height=600');
         if (printWindow) {
             printWindow.document.write(html);
@@ -241,8 +241,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
 
                         return (
                             <div key={column.id} className="bg-gray-200/50 rounded-3xl p-4 h-full flex flex-col border border-gray-200 overflow-hidden">
-                                
-                                {/* Header da Coluna (Fixo) */}
                                 <div className="flex items-center justify-between mb-4 px-2 shrink-0">
                                     <div className="flex items-center gap-2">
                                         <div className={`w-3 h-3 rounded-full ${column.color} shadow-sm`}></div>
@@ -253,7 +251,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                     </span>
                                 </div>
 
-                                {/* Container Rolável dos Cards */}
                                 <div className="flex-1 overflow-y-auto pr-2 space-y-4 pb-12 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
                                     {columnOrders.map(order => {
                                         const timeStr = new Date(order.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -269,8 +266,18 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                         <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded-md">#{shortId}</span>
                                                         <h3 className="font-bold text-gray-900 mt-2 text-lg leading-tight">{order.customer_name}</h3>
                                                     </div>
-                                                    <div className="flex items-center gap-1.5 text-gray-500 text-sm font-medium bg-gray-50 px-2 py-1 rounded-lg">
-                                                        <Clock className="w-4 h-4" /> {timeStr}
+                                                    <div className="flex items-center gap-2">
+                                                        {/* Botão Cancelar Pedido */}
+                                                        <button 
+                                                            onClick={() => updateOrderStatus(order.id, 'cancelled')}
+                                                            title="Cancelar Pedido"
+                                                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                        >
+                                                            <XCircle className="w-5 h-5" />
+                                                        </button>
+                                                        <div className="flex items-center gap-1.5 text-gray-500 text-sm font-medium bg-gray-50 px-2 py-1 rounded-lg">
+                                                            <Clock className="w-4 h-4" /> {timeStr}
+                                                        </div>
                                                     </div>
                                                 </div>
 
@@ -314,7 +321,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                     )}
                                                 </div>
 
-                                                {/* BLOCO DE BOTÕES ATUALIZADO */}
                                                 <div className="flex flex-col gap-2 mt-2">
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <button 
@@ -341,7 +347,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                         )}
                                                     </div>
                                                     
-                                                    {/* Botão de Impressão Full Width */}
                                                     <button 
                                                         onClick={() => printOrder(order)} 
                                                         className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors border border-gray-200"
