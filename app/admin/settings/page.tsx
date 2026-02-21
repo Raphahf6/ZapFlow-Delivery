@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Save, Store, MapPin, Clock, Camera, Loader2, Image as ImageIcon, Bike, Search } from "lucide-react";
+import { Save, Store, MapPin, Clock, Camera, Loader2, Image as ImageIcon, Bike, Search, Link as LinkIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 const defaultSchedule = {
@@ -23,6 +23,7 @@ export default function SettingsPage() {
     const [companyId, setCompanyId] = useState("");
 
     const [name, setName] = useState("");
+    const [slug, setSlug] = useState("");
     const [storeCategory, setStoreCategory] = useState("Adega e Bebidas");
     const [schedule, setSchedule] = useState<ScheduleType>(defaultSchedule);
     
@@ -52,10 +53,10 @@ export default function SettingsPage() {
                 if (data) {
                     setCompanyId(data.id);
                     setName(data.name || "");
+                    setSlug(data.slug || "");
                     setStoreCategory(data.store_category || "Adega e Bebidas");
                     setCurrentAddressLabel(data.address || "Nenhum endereço cadastrado.");
                     
-                    // Só seta no estado se não for um blob quebrado salvo por engano
                     if (data.logo_url && !data.logo_url.startsWith('blob:')) setLogoUrl(data.logo_url);
                     if (data.banner_url && !data.banner_url.startsWith('blob:')) setBannerUrl(data.banner_url);
                     
@@ -114,6 +115,17 @@ export default function SettingsPage() {
         setSchedule(prev => ({ ...prev, [day]: { ...prev[day], [field]: value } }));
     };
 
+    // Função para formatar o slug (remover acentos, espaços e caracteres especiais)
+    const formatSlug = (text: string) => {
+        return text.toString().toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove acentos
+            .replace(/\s+/g, '-') // Substitui espaços por hífen
+            .replace(/[^\w\-]+/g, '') // Remove não alfanuméricos
+            .replace(/\-\-+/g, '-') // Substitui múltiplos hífens por um único
+            .replace(/^-+/, '') // Remove hífen do início
+            .replace(/-+$/, ''); // Remove hífen do final
+    };
+
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
@@ -123,9 +135,16 @@ export default function SettingsPage() {
             let finalBannerUrl = bannerUrl;
             let lat = null, lng = null;
 
-            // Prevenção absoluta: Se for blob, zera antes de enviar pro banco
             if (finalLogoUrl.startsWith('blob:')) finalLogoUrl = "";
             if (finalBannerUrl.startsWith('blob:')) finalBannerUrl = "";
+
+            const formattedSlug = formatSlug(slug);
+
+            if (!formattedSlug) {
+                alert("O Link do Cardápio não pode ficar vazio.");
+                setSaving(false);
+                return;
+            }
 
             const fullAddress = (street && number && city) 
                 ? `${street}, ${number} - ${neighborhood}, ${city}` 
@@ -151,10 +170,7 @@ export default function SettingsPage() {
                 const ext = logoFile.name.split('.').pop();
                 const fileName = `logo_${companyId}_${Math.random()}.${ext}`;
                 const { error: uploadErr } = await supabase.storage.from('products').upload(fileName, logoFile, { upsert: true });
-                
-                if (uploadErr) {
-                    throw new Error(`Erro no Supabase Storage (Logo): ${uploadErr.message}`);
-                }
+                if (uploadErr) throw new Error(`Erro no Supabase Storage (Logo): ${uploadErr.message}`);
                 finalLogoUrl = supabase.storage.from('products').getPublicUrl(fileName).data.publicUrl;
             }
 
@@ -162,15 +178,13 @@ export default function SettingsPage() {
                 const ext = bannerFile.name.split('.').pop();
                 const fileName = `banner_${companyId}_${Math.random()}.${ext}`;
                 const { error: uploadErr } = await supabase.storage.from('products').upload(fileName, bannerFile, { upsert: true });
-                
-                if (uploadErr) {
-                    throw new Error(`Erro no Supabase Storage (Banner): ${uploadErr.message}`);
-                }
+                if (uploadErr) throw new Error(`Erro no Supabase Storage (Banner): ${uploadErr.message}`);
                 finalBannerUrl = supabase.storage.from('products').getPublicUrl(fileName).data.publicUrl;
             }
 
             const payload: any = {
                 name,
+                slug: formattedSlug,
                 store_category: storeCategory, 
                 address: fullAddress, 
                 logo_url: finalLogoUrl, 
@@ -190,16 +204,20 @@ export default function SettingsPage() {
             
             alert("Configurações salvas com sucesso!");
             setCurrentAddressLabel(fullAddress);
+            setSlug(formattedSlug); // Atualiza visualmente pro slug limpo
             setLogoFile(null);
             setBannerFile(null);
-
-            // Atualiza o visual da tela com o link público definitivo
             setLogoUrl(finalLogoUrl);
             setBannerUrl(finalBannerUrl);
 
         } catch (error: any) {
             console.error(error);
-            alert(`Falha ao salvar: ${error.message}`);
+            // Tratamento específico se tentar usar um slug que já existe em outra empresa
+            if (error.code === '23505') {
+                alert("Este Link de Cardápio já está sendo usado por outra loja. Escolha outro.");
+            } else {
+                alert(`Falha ao salvar: ${error.message}`);
+            }
         } finally {
             setSaving(false);
         }
@@ -264,6 +282,11 @@ export default function SettingsPage() {
                                     <input type="text" required className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={name} onChange={(e) => setName(e.target.value)} />
                                 </div>
                                 <div className="space-y-1.5 col-span-2 md:col-span-1">
+                                    <label className="text-sm font-bold text-gray-700 uppercase flex items-center gap-1"><LinkIcon className="w-4 h-4"/> Link do Cardápio (Slug)</label>
+                                    <input type="text" required className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={slug} onChange={(e) => setSlug(e.target.value)} />
+                                    <p className="text-[10px] text-gray-500 font-medium">Cuidado: Mudar o link quebra QRCodes antigos.</p>
+                                </div>
+                                <div className="space-y-1.5 col-span-2">
                                     <label className="text-sm font-bold text-gray-700 uppercase">Categoria</label>
                                     <input type="text" placeholder="Ex: Adega e Bebidas, Pizzaria..." required className="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={storeCategory} onChange={(e) => setStoreCategory(e.target.value)} />
                                 </div>

@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Loader2, MessageCircle, MapPin, Bike, CheckCircle, Clock, Banknote, CreditCard, ShoppingBag, ChevronRight } from "lucide-react";
+import { Loader2, MessageCircle, MapPin, Bike, CheckCircle, Clock, Banknote, CreditCard, ShoppingBag, ChevronRight, LayoutDashboard } from "lucide-react";
 
-// Tipagem para ajudar o TypeScript a entender o formato dos dados
 type Order = {
     id: string;
     created_at: string;
@@ -32,8 +31,8 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [companyId, setCompanyId] = useState("");
+    const [companyName, setCompanyName] = useState("");
 
-    // Usando React.use() para desembrulhar os params no Next.js 15
     const slug = React.use(params).slug;
 
     useEffect(() => {
@@ -42,11 +41,12 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
 
     const loadData = async () => {
         setLoading(true);
-        // 1. Pega a empresa pelo slug
-        const { data: company } = await supabase.from("Company").select("id").eq("slug", slug).single();
+        // Busca o ID e o Nome da Empresa para usar no Header e no WhatsApp
+        const { data: company } = await supabase.from("Company").select("id, name").eq("slug", slug).single();
         
         if (company) {
             setCompanyId(company.id);
+            setCompanyName(company.name);
             fetchOrders(company.id);
             setupRealtime(company.id);
         }
@@ -54,7 +54,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
     };
 
     const fetchOrders = async (cId: string) => {
-        // Busca os pedidos, incluindo os Itens e o Nome do Produto!
         const { data, error } = await supabase
             .from("Order")
             .select(`
@@ -65,7 +64,7 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                 )
             `)
             .eq("company_id", cId)
-            .neq("status", "completed") // Esconde os já finalizados
+            .neq("status", "completed")
             .neq("status", "cancelled")
             .order("created_at", { ascending: true });
 
@@ -79,10 +78,7 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'Order', filter: `company_id=eq.${cId}` },
-                () => {
-                    // Se houver qualquer mudança na tabela Order, recarrega a lista
-                    fetchOrders(cId);
-                }
+                () => fetchOrders(cId)
             )
             .subscribe();
 
@@ -90,39 +86,48 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
     };
 
     const updateOrderStatus = async (orderId: string, newStatus: string) => {
-        // Atualiza visualmente na hora para não dar "lag" (Optimistic UI)
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus as any } : o));
-        
-        // Manda pro banco
         await supabase.from("Order").update({ status: newStatus }).eq("id", orderId);
     };
 
-    const openWhatsApp = (phone: string, orderId: string, name: string) => {
+    // Função do WhatsApp Atualizada e Personalizada
+    const openWhatsApp = (phone: string, orderId: string, customerName: string) => {
         const cleanPhone = phone.replace(/\D/g, '');
         const shortId = orderId.split('-')[0].toUpperCase();
-        const text = `Olá ${name}, somos da adega! Sobre o seu pedido #${shortId}...`;
+        
+        // Mensagem dinâmica usando o Nome da Loja
+        const text = `Olá ${customerName}, somos da ${companyName}! Sobre o seu pedido #${shortId}...`;
         window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
     };
 
     if (loading) return <div className="min-h-screen flex justify-center items-center bg-gray-50"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>;
 
     return (
-        <div className="min-h-screen bg-gray-100 p-6 font-sans">
-            <div className="max-w-[1400px] mx-auto">
-                <div className="flex items-center justify-between mb-8">
-                    <div>
-                        <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Painel Operacional</h1>
-                        <p className="text-gray-500 font-medium mt-1">Gerencie os pedidos em tempo real.</p>
+        <div className="min-h-screen bg-gray-100 font-sans flex flex-col">
+            {/* NOVO HEADER DO KANBAN */}
+            <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+                <div className="max-w-[1400px] mx-auto px-6 h-16 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <a href="/admin/dashboard" className="p-2 -ml-2 text-gray-400 hover:bg-gray-100 hover:text-gray-900 rounded-xl transition-colors flex items-center gap-2 font-bold text-sm">
+                            <LayoutDashboard className="w-5 h-5" />
+                            <span>Voltar ao Painel</span>
+                        </a>
+                        <div className="w-px h-6 bg-gray-200"></div>
+                        <h1 className="font-extrabold text-xl text-gray-900 flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                            {companyName} <span className="text-gray-400 font-medium text-base ml-1">| Operação Ao Vivo</span>
+                        </h1>
                     </div>
                 </div>
+            </header>
 
+            <main className="flex-1 p-6 max-w-[1400px] mx-auto w-full">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
                     {STATUS_COLUMNS.map((column) => {
                         const columnOrders = orders.filter(o => o.status === column.id);
 
                         return (
-                            <div key={column.id} className="bg-gray-200/50 rounded-3xl p-4 min-h-[70vh] flex flex-col gap-4 border border-gray-200">
-                                {/* Cabeçalho da Coluna */}
+                            <div key={column.id} className="bg-gray-200/50 rounded-3xl p-4 min-h-[75vh] flex flex-col gap-4 border border-gray-200">
                                 <div className="flex items-center justify-between mb-2 px-2">
                                     <div className="flex items-center gap-2">
                                         <div className={`w-3 h-3 rounded-full ${column.color} shadow-sm`}></div>
@@ -133,7 +138,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                     </span>
                                 </div>
 
-                                {/* Lista de Cards */}
                                 {columnOrders.map(order => {
                                     const timeStr = new Date(order.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
                                     const shortId = order.id.split('-')[0].toUpperCase();
@@ -143,7 +147,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                     return (
                                         <div key={order.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex flex-col gap-4 hover:shadow-md transition-shadow">
                                             
-                                            {/* HEADER DO CARD */}
                                             <div className="flex justify-between items-start border-b border-gray-50 pb-3">
                                                 <div>
                                                     <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded-md">#{shortId}</span>
@@ -154,7 +157,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                 </div>
                                             </div>
 
-                                            {/* ITENS DO PEDIDO (O QUE FALTAVA!) */}
                                             <div className="bg-orange-50/50 rounded-xl p-3 border border-orange-100/50">
                                                 <h4 className="text-xs font-bold text-orange-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                                     <ShoppingBag className="w-4 h-4" /> Itens do Pedido
@@ -168,7 +170,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                 </ul>
                                             </div>
 
-                                            {/* DETALHES DE ENTREGA E PAGAMENTO */}
                                             <div className="grid grid-cols-1 gap-2 text-sm">
                                                 <div className="flex items-start gap-2 text-gray-600">
                                                     <MapPin className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
@@ -181,7 +182,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                          pm === 'CARTAO' ? <span className="font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded text-xs flex items-center gap-1"><CreditCard className="w-3 h-3" /> Cartão</span> : 
                                                          <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded text-xs flex items-center gap-1"><Banknote className="w-3 h-3" /> Dinheiro</span>}
                                                         
-                                                        {/* Badge de Pago/Não Pago */}
                                                         {isPaid ? 
                                                             <span className="text-xs font-bold text-green-600 flex items-center gap-0.5"><CheckCircle className="w-3 h-3" /> Pago</span> : 
                                                             <span className="text-xs font-bold text-red-500">A Cobrar</span>
@@ -190,7 +190,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                     <span className="font-extrabold text-gray-900 text-lg">R$ {Number(order.total_price).toFixed(2).replace('.', ',')}</span>
                                                 </div>
 
-                                                {/* Aviso de Troco (Se for dinheiro) */}
                                                 {pm === 'DINHEIRO' && order.address_details?.changeFor && (
                                                     <div className="bg-red-50 text-red-700 px-3 py-2 rounded-lg text-xs font-bold mt-1 border border-red-100">
                                                         🚨 Levar troco para R$ {Number(order.address_details.changeFor).toFixed(2).replace('.', ',')}
@@ -198,7 +197,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                 )}
                                             </div>
 
-                                            {/* AÇÕES (BOTÕES) */}
                                             <div className="grid grid-cols-2 gap-2 mt-2">
                                                 <button 
                                                     onClick={() => openWhatsApp(order.customer_phone, order.id, order.customer_name)}
@@ -207,7 +205,6 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                     <MessageCircle className="w-4 h-4" /> WhatsApp
                                                 </button>
 
-                                                {/* Botão de Avançar Status Dinâmico */}
                                                 {column.id === 'pending' && (
                                                     <button onClick={() => updateOrderStatus(order.id, 'preparing')} className="bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-colors shadow-sm">
                                                         Preparar <ChevronRight className="w-4 h-4" />
@@ -238,7 +235,7 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                         );
                     })}
                 </div>
-            </div>
+            </main>
         </div>
     );
 }
