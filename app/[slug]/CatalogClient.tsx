@@ -7,17 +7,17 @@ import { supabase } from "@/lib/supabase";
 import PixModal from "@/components/PixModal"; // Import do Pix que adicionamos antes!
 
 function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371; 
-  const dLat = (lat2-lat1) * (Math.PI/180);
-  const dLon = (lon2-lon1) * (Math.PI/180);
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * (Math.PI/180)) * Math.cos(lat2 * (Math.PI/180)) * Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c; 
+    const R = 6371;
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
 }
 
 function CatalogHeader({ company, isOpenNow, userDistance }: { company: any, isOpenNow: boolean, userDistance: string | null }) {
     if (!company) return null;
-    
+
     const baseFee = company.delivery_rules?.baseFee ? Number(company.delivery_rules.baseFee) : 5.00;
     const categoryName = company.store_category || 'Adega e Bebidas';
 
@@ -26,7 +26,7 @@ function CatalogHeader({ company, isOpenNow, userDistance }: { company: any, isO
             <div className="relative h-40 md:h-52 w-full bg-gray-200 bg-cover bg-center" style={{ backgroundImage: `url(${company.banner_url || 'https://images.unsplash.com/photo-1600093463592-8e36ae95ef56'})` }}>
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
             </div>
-            
+
             <div className="max-w-3xl mx-auto px-4 relative -mt-12 flex items-end justify-between z-10">
                 <div className="flex items-end gap-4">
                     <img src={company.logo_url || "https://images.unsplash.com/photo-1563223771-5fe4038fbfc9"} className="w-24 h-24 rounded-full border-4 border-white shadow-md object-cover bg-white" alt="Logo" />
@@ -43,7 +43,7 @@ function CatalogHeader({ company, isOpenNow, userDistance }: { company: any, isO
                 </div>
 
                 <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mt-2">
-                    <span className="flex items-center gap-1 text-yellow-500 font-bold"><Star className="w-4 h-4 fill-yellow-500"/> 4.9</span>
+                    <span className="flex items-center gap-1 text-yellow-500 font-bold"><Star className="w-4 h-4 fill-yellow-500" /> 4.9</span>
                     <span className="text-gray-400">(500+)</span>
                     <span className="text-gray-300">•</span>
                     <span>{categoryName}</span>
@@ -54,10 +54,10 @@ function CatalogHeader({ company, isOpenNow, userDistance }: { company: any, isO
                 <div className="flex items-center gap-4 mt-4 text-sm font-medium text-gray-600">
                     {/* Previsão alterada de mock fixo para status dinâmico */}
                     <div className="flex items-center gap-1.5">
-                        <Clock className="w-4 h-4 text-gray-400"/> 
+                        <Clock className="w-4 h-4 text-gray-400" />
                         {isOpenNow ? "Entrega" : "Indisponível"}
                     </div>
-                    <div className="flex items-center gap-1.5 text-blue-600"><Bike className="w-4 h-4 text-blue-500"/> Frete a partir de R$ {baseFee.toFixed(2).replace('.', ',')}</div>
+                    <div className="flex items-center gap-1.5 text-blue-600"><Bike className="w-4 h-4 text-blue-500" /> Frete a partir de R$ {baseFee.toFixed(2).replace('.', ',')}</div>
                 </div>
             </div>
         </section>
@@ -101,7 +101,7 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
     const [isSearching, setIsSearching] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCalculatingDistance, setIsCalculatingDistance] = useState(false);
-    
+
     const [phone, setPhone] = useState("");
     const [customerName, setCustomerName] = useState("");
     const [needsName, setNeedsName] = useState(false);
@@ -151,19 +151,19 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
     const handleCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         let val = e.target.value.replace(/\D/g, '');
         setCep(val);
-        if(val.length === 8) {
-             try {
+        if (val.length === 8) {
+            try {
                 const res = await fetch(`https://cep.awesomeapi.com.br/json/${val}`);
                 if (!res.ok) throw new Error();
                 const data = await res.json();
-                
+
                 setStreet(data.address || "");
                 setNeighborhood(data.district || "");
                 setCity(data.city || "");
-             } catch (error) {
+            } catch (error) {
                 // Fallback silencioso se falhar
                 console.error("Erro ao buscar CEP");
-             }
+            }
         }
     };
 
@@ -193,8 +193,8 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
             if (cLat && cLng) {
                 const osrmRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${company.lng},${company.lat};${cLng},${cLat}?overview=false`);
                 const osrmData = await osrmRes.json();
-                
-                if(osrmData.code === 'Ok' && osrmData.routes.length > 0) {
+
+                if (osrmData.code === 'Ok' && osrmData.routes.length > 0) {
                     const distanceKm = osrmData.routes[0].distance / 1000;
                     if (distanceKm <= Number(rules.baseKm)) {
                         setCalculatedFee(Number(rules.baseFee));
@@ -205,7 +205,7 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
                     setCalculatedFee(Number(rules.extraFee));
                 }
             } else {
-                setCalculatedFee(Number(rules.extraFee)); 
+                setCalculatedFee(Number(rules.extraFee));
             }
         } catch (err) {
             setCalculatedFee(Number(rules.baseFee));
@@ -237,15 +237,15 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
                 company_id: company.id, name: customerName, phone: phone, saved_addresses: finalAddresses
             }, { onConflict: 'company_id, phone' });
 
-            const fullAddress = `${selectedAddressObj.street}, ${selectedAddressObj.number} - ${selectedAddressObj.neighborhood} ${selectedAddressObj.complement ? '('+selectedAddressObj.complement+')' : ''}`;
+            const fullAddress = `${selectedAddressObj.street}, ${selectedAddressObj.number} - ${selectedAddressObj.neighborhood} ${selectedAddressObj.complement ? '(' + selectedAddressObj.complement + ')' : ''}`;
 
             const { data: order, error: orderError } = await supabase
                 .from('Order').insert([{
-                    company_id: company.id, 
-                    customer_name: customerName, 
-                    customer_phone: phone, 
+                    company_id: company.id,
+                    customer_name: customerName,
+                    customer_phone: phone,
                     total_price: total,
-                    status: 'pending', 
+                    status: 'pending',
                     payment_status: 'unpaid',
                     address_details: { address: fullAddress, paymentMethod, changeFor: paymentMethod === 'DINHEIRO' ? changeFor : null, deliveryFee: calculatedFee }
                 }]).select().single();
@@ -255,9 +255,27 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
             const itemsToInsert = cart.map((item: any) => ({
                 order_id: order.id, product_id: item.id, quantity: item.quantity, unit_price: item.price
             }));
-            
+
             const { error: itemsError } = await supabase.from('OrderItem').insert(itemsToInsert);
             if (itemsError) throw itemsError;
+
+            // NOVA LÓGICA: DISPARO DE WHATSAPP (PEDIDO CONFIRMADO)
+            try {
+                const mensagemCliente = `*Pedido Confirmado!* 🎉\n\nOlá, ${customerName}!\nRecebemos seu pedido na *${company.name}* e ele já foi para a cozinha/preparo.\n\n*Resumo:*\n${cart.map((item: any) => `${item.quantity}x ${item.name}`).join('\n')}\n\n*Total:* R$ ${total.toFixed(2).replace('.', ',')}\n*Pagamento:* ${paymentMethod}\n\nAvisaremos por aqui assim que sair para entrega! 🛵`;
+
+                await fetch('https://zapflow-whatsapp-api.onrender.com/api/whatsapp/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        companyId: company.id,
+                        phone: phone,
+                        message: mensagemCliente
+                    })
+                });
+            } catch (wppError) {
+                console.error("Erro ao enviar WhatsApp de confirmação:", wppError);
+                // Não damos throw aqui para não travar o fluxo caso o wpp falhe
+            }
 
             if (paymentMethod === 'PIX') {
                 const pixRes = await fetch('/api/payments/pix', {
@@ -269,10 +287,10 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
                         total: total
                     })
                 });
-                
+
                 const pixInfo = await pixRes.json();
                 if (!pixRes.ok) throw new Error(pixInfo.error || "Erro ao gerar Pix");
-                
+
                 setPixData(pixInfo);
                 setIsPixModalOpen(true);
             } else {
@@ -293,7 +311,7 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
         <div className="fixed inset-0 z-50 overflow-hidden">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 200 }} className="absolute inset-x-0 bottom-0 bg-[#f7f7f7] rounded-t-[32px] h-[92vh] flex flex-col md:max-w-3xl md:mx-auto shadow-2xl">
-                
+
                 <div className="bg-white px-6 py-4 flex items-center justify-between border-b shrink-0 rounded-t-[32px]">
                     <button onClick={() => step === "IDENTIFICATION" ? onClose() : step === "CONFIRMATION" ? setStep("ADDRESS") : setStep("IDENTIFICATION")} className="p-2 -ml-2 text-gray-400"><ChevronLeft size={24} /></button>
                     <h2 className="text-lg font-bold text-gray-900">Finalizar Pedido</h2>
@@ -400,13 +418,13 @@ function CartDrawer({ isOpen, onClose, cart, company, onSuccess }: any) {
                 </div>
             </motion.div>
 
-            <PixModal 
-                isOpen={isPixModalOpen} 
+            <PixModal
+                isOpen={isPixModalOpen}
                 onClose={() => {
                     setIsPixModalOpen(false);
                     onSuccess();
-                }} 
-                pixData={pixData} 
+                }}
+                pixData={pixData}
             />
         </div>
     );
@@ -418,25 +436,25 @@ export default function CatalogClient({ company, categories, products }: { compa
     const [searchTerm, setSearchTerm] = useState("");
     const [activeCategory, setActiveCategory] = useState<string | null>(null);
     const [userDistance, setUserDistance] = useState<string | null>(null);
-    
+
     const [isClient, setIsClient] = useState(false);
     const [isOpenNow, setIsOpenNow] = useState(true);
 
     const checkIsOpen = () => {
-        if(!company?.business_hours || Object.keys(company.business_hours).length === 0) return true; 
-        
+        if (!company?.business_hours || Object.keys(company.business_hours).length === 0) return true;
+
         const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
         const today = days[new Date().getDay()];
         const rule = company.business_hours[today];
-        
-        if(!rule || !rule.isOpen) return false;
+
+        if (!rule || !rule.isOpen) return false;
 
         const now = new Date();
         const currentTime = now.getHours() * 60 + now.getMinutes();
-        
+
         const [openH, openM] = rule.open.split(':').map(Number);
         const openTime = openH * 60 + openM;
-        
+
         const [closeH, closeM] = rule.close.split(':').map(Number);
         const closeTime = closeH * 60 + closeM;
 
@@ -451,9 +469,9 @@ export default function CatalogClient({ company, categories, products }: { compa
             navigator.geolocation.getCurrentPosition(
                 (position) => {
                     const dist = getDistanceFromLatLonInKm(
-                        company.lat, 
-                        company.lng, 
-                        position.coords.latitude, 
+                        company.lat,
+                        company.lng,
+                        position.coords.latitude,
                         position.coords.longitude
                     );
                     setUserDistance(dist.toFixed(1));
@@ -488,8 +506,8 @@ export default function CatalogClient({ company, categories, products }: { compa
         alert("Pedido realizado com sucesso!");
     };
 
-    const filteredProducts = products.filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const filteredProducts = products.filter(p =>
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (p.description && p.description.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
@@ -500,7 +518,7 @@ export default function CatalogClient({ company, categories, products }: { compa
 
     const orphanProducts = filteredProducts.filter(p => !p.category_id);
 
-    if (!isClient) return null; 
+    if (!isClient) return null;
 
     return (
         <div className="min-h-screen bg-gray-50 pb-24 font-sans text-gray-900">
@@ -510,20 +528,20 @@ export default function CatalogClient({ company, categories, products }: { compa
                 <div className="max-w-3xl mx-auto px-4 py-3">
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                        <input 
-                            type="text" 
-                            placeholder="Buscar bebida, petisco..." 
+                        <input
+                            type="text"
+                            placeholder="Buscar bebida, petisco..."
                             className="w-full pl-10 pr-4 py-2.5 bg-gray-100 border-transparent focus:bg-white border focus:border-blue-500 rounded-xl outline-none transition-all text-sm"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
                 </div>
-                
+
                 {groupedProducts.length > 0 && !searchTerm && (
                     <div className="max-w-3xl mx-auto px-2 pb-3 flex overflow-x-auto no-scrollbar gap-2">
                         {groupedProducts.map(cat => (
-                            <a 
+                            <a
                                 key={cat.id}
                                 href={`#cat-${cat.id}`}
                                 onClick={() => setActiveCategory(cat.id)}
@@ -543,14 +561,14 @@ export default function CatalogClient({ company, categories, products }: { compa
                         <p className="text-sm">Não estamos recebendo pedidos no momento. Confira nosso horário de funcionamento.</p>
                     </div>
                 )}
-                
+
                 <div className="flex flex-col gap-8">
                     {groupedProducts.map((category) => (
                         <div key={category.id} id={`cat-${category.id}`} className="scroll-mt-36">
                             <h2 className="text-lg font-bold text-gray-900 mb-4">{category.name}</h2>
                             <div className="flex flex-col gap-4">
                                 {category.items.map((product: any) => (
-                                    <ProductCard 
+                                    <ProductCard
                                         key={product.id} product={product} isOpen={isOpenNow}
                                         cartItem={cart.find((item) => item.id === product.id)}
                                         onAdd={() => addToCart(product)} onRemove={() => removeFromCart(product.id)}
@@ -565,7 +583,7 @@ export default function CatalogClient({ company, categories, products }: { compa
                             <h2 className="text-lg font-bold text-gray-900 mb-4">Outros Itens</h2>
                             <div className="flex flex-col gap-4">
                                 {orphanProducts.map((product: any) => (
-                                    <ProductCard 
+                                    <ProductCard
                                         key={product.id} product={product} isOpen={isOpenNow}
                                         cartItem={cart.find((item) => item.id === product.id)}
                                         onAdd={() => addToCart(product)} onRemove={() => removeFromCart(product.id)}

@@ -17,22 +17,47 @@ export default function ProductsPage() {
 
     async function fetchProducts() {
         setLoading(true);
-        const { data, error } = await supabase
-            .from("Product")
-            .select("*, Category(name)")
-            .order("created_at", { ascending: false });
+        try {
+            // 1. Pega o usuário logado
+            const { data: { user }, error: userError } = await supabase.auth.getUser();
+            if (userError || !user) throw new Error("Usuário não autenticado");
 
-        if (!error && data) setProducts(data);
-        setLoading(false);
+            // 2. Acha a empresa (Adega) deste usuário
+            const { data: company, error: companyError } = await supabase
+                .from("Company")
+                .select("id")
+                .eq("owner_id", user.id)
+                .single();
+
+            if (companyError || !company) throw new Error("Empresa não encontrada");
+
+            // 3. Busca APENAS os produtos desta empresa específica
+            const { data, error } = await supabase
+                .from("Product")
+                .select("*, Category(name)")
+                .eq("company_id", company.id) // <--- TRAVA DE SEGURANÇA APLICADA AQUI
+                .order("created_at", { ascending: false });
+
+            if (error) throw error;
+            if (data) setProducts(data);
+
+        } catch (err) {
+            console.error("Erro ao carregar produtos:", err);
+            alert("Erro ao carregar seus produtos.");
+        } finally {
+            setLoading(false);
+        }
     }
 
     const toggleStock = async (productId: string, currentStatus: boolean) => {
         const newStatus = !currentStatus;
         
+        // Atualização otimista na UI
         setProducts(prev => prev.map(p => p.id === productId ? { ...p, in_stock: newStatus } : p));
 
         const { error } = await supabase.from("Product").update({ in_stock: newStatus }).eq("id", productId);
 
+        // Reverte se der erro no banco
         if (error) {
             alert("Erro ao atualizar o estoque. Tente novamente.");
             setProducts(prev => prev.map(p => p.id === productId ? { ...p, in_stock: currentStatus } : p));

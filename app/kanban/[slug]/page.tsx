@@ -34,9 +34,9 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
     const [loading, setLoading] = useState(true);
     const [companyId, setCompanyId] = useState("");
     const [companyName, setCompanyName] = useState("");
-    
+
     const [isSoundOn, setIsSoundOn] = useState(false);
-    const soundRef = useRef(false); 
+    const soundRef = useRef(false);
 
     const slug = React.use(params).slug;
 
@@ -47,7 +47,7 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
     const loadData = async () => {
         setLoading(true);
         const { data: company } = await supabase.from("Company").select("id, name").eq("slug", slug).single();
-        
+
         if (company) {
             setCompanyId(company.id);
             setCompanyName(company.name);
@@ -84,7 +84,7 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                 { event: '*', schema: 'public', table: 'Order', filter: `company_id=eq.${cId}` },
                 (payload) => {
                     fetchOrders(cId);
-                    
+
                     if (payload.eventType === 'INSERT' && soundRef.current) {
                         const audio = new Audio(CASH_SOUND_URL);
                         audio.play().catch(e => console.error("Áudio bloqueado pelo navegador:", e));
@@ -102,19 +102,42 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
             if (!confirm("Tem certeza que deseja cancelar este pedido?")) return;
         }
 
+        // Acha o pedido atual para pegar o telefone do cliente
+        const orderToUpdate = orders.find(o => o.id === orderId);
+
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus as any } : o));
         await supabase.from("Order").update({ status: newStatus }).eq("id", orderId);
-        
+
         // Se o status for final (concluído ou cancelado), removemos da visualização do Kanban
         if (newStatus === 'completed' || newStatus === 'cancelled') {
             setOrders(prev => prev.filter(o => o.id !== orderId));
+        }
+
+        // NOVA LÓGICA: DISPARO DE WHATSAPP (SAIU PARA ENTREGA)
+        if (newStatus === 'delivering' && orderToUpdate) {
+            try {
+                const shortId = orderId.split('-')[0].toUpperCase();
+                const msgEntrega = `🛵 *Saiu para Entrega!*\n\nOpa, ${orderToUpdate.customer_name}!\n\nSeu pedido #${shortId} da *${companyName}* acabou de sair daqui com o nosso entregador.\n\nFique de olho no portão (${orderToUpdate.address_details?.paymentMethod})! Obrigado pela preferência.`;
+
+                await fetch('https://zapflow-whatsapp-api.onrender.com/api/whatsapp/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        companyId: companyId,
+                        phone: orderToUpdate.customer_phone,
+                        message: msgEntrega
+                    })
+                });
+            } catch (err) {
+                console.error("Erro ao enviar zap de entrega:", err);
+            }
         }
     };
 
     const openWhatsApp = (phone: string, orderId: string, customerName: string) => {
         const cleanPhone = phone.replace(/\D/g, '');
         const shortId = orderId.split('-')[0].toUpperCase();
-        
+
         const text = `Olá ${customerName}, somos da ${companyName}! Sobre o seu pedido #${shortId}...`;
         window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
     };
@@ -123,7 +146,7 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
         const newState = !isSoundOn;
         setIsSoundOn(newState);
         soundRef.current = newState;
-        
+
         if (newState) {
             const audio = new Audio(CASH_SOUND_URL);
             audio.volume = 0.5;
@@ -223,9 +246,9 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                             {companyName} <span className="hidden md:inline text-gray-400 font-medium text-base ml-1">| Operação Ao Vivo</span>
                         </h1>
                     </div>
-                    
-                    <button 
-                        onClick={toggleSound} 
+
+                    <button
+                        onClick={toggleSound}
                         className={`px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold transition-colors shadow-sm ${isSoundOn ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
                     >
                         {isSoundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
@@ -260,7 +283,7 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
 
                                         return (
                                             <div key={order.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex flex-col gap-4 hover:shadow-md transition-shadow">
-                                                
+
                                                 <div className="flex justify-between items-start border-b border-gray-50 pb-3">
                                                     <div>
                                                         <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded-md">#{shortId}</span>
@@ -268,7 +291,7 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         {/* Botão Cancelar Pedido */}
-                                                        <button 
+                                                        <button
                                                             onClick={() => updateOrderStatus(order.id, 'cancelled')}
                                                             title="Cancelar Pedido"
                                                             className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -299,15 +322,15 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                         <MapPin className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
                                                         <span className="leading-tight">{order.address_details?.address || "Retirada no local"}</span>
                                                     </div>
-                                                    
+
                                                     <div className="flex items-center justify-between mt-2 pt-3 border-t border-gray-50">
                                                         <div className="flex items-center gap-2">
-                                                            {pm === 'PIX' ? <span className="font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded text-xs flex items-center gap-1"><div className="font-serif leading-none">P</div> PIX</span> : 
-                                                             pm === 'CARTAO' ? <span className="font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded text-xs flex items-center gap-1"><CreditCard className="w-3 h-3" /> Cartão</span> : 
-                                                             <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded text-xs flex items-center gap-1"><Banknote className="w-3 h-3" /> Dinheiro</span>}
-                                                            
-                                                            {isPaid ? 
-                                                                <span className="text-xs font-bold text-green-600 flex items-center gap-0.5"><CheckCircle className="w-3 h-3" /> Pago</span> : 
+                                                            {pm === 'PIX' ? <span className="font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded text-xs flex items-center gap-1"><div className="font-serif leading-none">P</div> PIX</span> :
+                                                                pm === 'CARTAO' ? <span className="font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded text-xs flex items-center gap-1"><CreditCard className="w-3 h-3" /> Cartão</span> :
+                                                                    <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded text-xs flex items-center gap-1"><Banknote className="w-3 h-3" /> Dinheiro</span>}
+
+                                                            {isPaid ?
+                                                                <span className="text-xs font-bold text-green-600 flex items-center gap-0.5"><CheckCircle className="w-3 h-3" /> Pago</span> :
                                                                 <span className="text-xs font-bold text-red-500">A Cobrar</span>
                                                             }
                                                         </div>
@@ -323,7 +346,7 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
 
                                                 <div className="flex flex-col gap-2 mt-2">
                                                     <div className="grid grid-cols-2 gap-2">
-                                                        <button 
+                                                        <button
                                                             onClick={() => openWhatsApp(order.customer_phone, order.id, order.customer_name)}
                                                             className="bg-[#25D366] hover:bg-[#20bd5a] text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-sm"
                                                         >
@@ -346,9 +369,9 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                             </button>
                                                         )}
                                                     </div>
-                                                    
-                                                    <button 
-                                                        onClick={() => printOrder(order)} 
+
+                                                    <button
+                                                        onClick={() => printOrder(order)}
                                                         className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors border border-gray-200"
                                                     >
                                                         <Printer className="w-4 h-4" /> Imprimir Cupom
