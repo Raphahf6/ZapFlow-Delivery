@@ -1,258 +1,244 @@
 "use client";
 
-import React, { useState, useEffect, use } from "react";
-import { Clock, ChefHat, CheckCircle, Truck, Phone, MapPin, Loader2, RefreshCcw, Store } from "lucide-react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { Loader2, MessageCircle, MapPin, Bike, CheckCircle, Clock, Banknote, CreditCard, ShoppingBag, ChevronRight } from "lucide-react";
 
+// Tipagem para ajudar o TypeScript a entender o formato dos dados
 type Order = {
     id: string;
+    created_at: string;
     customer_name: string;
     customer_phone: string;
     total_price: number;
-    status: 'pending' | 'preparing' | 'ready' | 'delivered';
-    payment_status: string;
+    status: 'pending' | 'preparing' | 'delivering' | 'completed' | 'cancelled';
+    payment_status: 'paid' | 'unpaid';
     address_details: any;
-    created_at: string;
+    OrderItem: {
+        id: string;
+        quantity: number;
+        unit_price: number;
+        Product: { name: string };
+    }[];
 };
 
 const STATUS_COLUMNS = [
-    { id: 'pending', title: 'Novos', icon: Clock, color: 'bg-orange-100 text-orange-600', borderColor: 'border-orange-200' },
-    { id: 'preparing', title: 'Em Preparo', icon: ChefHat, color: 'bg-blue-100 text-blue-600', borderColor: 'border-blue-200' },
-    { id: 'ready', title: 'Pronto', icon: CheckCircle, color: 'bg-green-100 text-green-600', borderColor: 'border-green-200' },
-    { id: 'delivered', title: 'Entregue', icon: Truck, color: 'bg-gray-100 text-gray-600', borderColor: 'border-gray-200' },
+    { id: 'pending', title: 'Novos Pedidos', color: 'bg-red-500', bg: 'bg-red-50', text: 'text-red-700' },
+    { id: 'preparing', title: 'Em Preparo', color: 'bg-orange-500', bg: 'bg-orange-50', text: 'text-orange-700' },
+    { id: 'delivering', title: 'Em Rota (Entrega)', color: 'bg-blue-500', bg: 'bg-blue-50', text: 'text-blue-700' },
 ];
 
 export default function KanbanPage({ params }: { params: Promise<{ slug: string }> }) {
-    // No Next 15 Client Components, usamos React.use() para desembrulhar o params
-    const resolvedParams = use(params);
-    const slug = resolvedParams.slug;
-
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
-    const [company, setCompany] = useState<any>(null);
+    const [companyId, setCompanyId] = useState("");
 
-    const fetchOrders = async (compId: string) => {
+    // Usando React.use() para desembrulhar os params no Next.js 15
+    const slug = React.use(params).slug;
+
+    useEffect(() => {
+        loadData();
+    }, [slug]);
+
+    const loadData = async () => {
         setLoading(true);
-        const { data, error } = await supabase
-            .from("Order")
-            .select("*")
-            .eq("company_id", compId)
-            .order("created_at", { ascending: false });
-
-        if (!error && data) {
-            setOrders(data);
+        // 1. Pega a empresa pelo slug
+        const { data: company } = await supabase.from("Company").select("id").eq("slug", slug).single();
+        
+        if (company) {
+            setCompanyId(company.id);
+            fetchOrders(company.id);
+            setupRealtime(company.id);
         }
         setLoading(false);
     };
 
-    // BUSCA INICIAL E CONFIGURAÇÃO DA EMPRESA
-    useEffect(() => {
-        async function init() {
-            const { data: comp } = await supabase
-                .from("Company")
-                .select("*")
-                .eq("slug", slug)
-                .single();
+    const fetchOrders = async (cId: string) => {
+        // Busca os pedidos, incluindo os Itens e o Nome do Produto!
+        const { data, error } = await supabase
+            .from("Order")
+            .select(`
+                *,
+                OrderItem (
+                    id, quantity, unit_price,
+                    Product ( name )
+                )
+            `)
+            .eq("company_id", cId)
+            .neq("status", "completed") // Esconde os já finalizados
+            .neq("status", "cancelled")
+            .order("created_at", { ascending: true });
 
-            if (comp) {
-                setCompany(comp);
-                fetchOrders(comp.id);
-            } else {
-                setLoading(false);
-            }
+        if (!error && data) {
+            setOrders(data as any);
         }
-        init();
-    }, [slug]);
+    };
 
-    // O MOTOR EM TEMPO REAL (WEBSOCKETS)
-    useEffect(() => {
-        if (!company?.id) return;
-
-        console.log("🟢 Conectando ao painel em tempo real...");
-
-        // Inscreve no canal da tabela Order filtrando apenas os pedidos DESSA empresa
-        const orderSubscription = supabase
-            .channel('painel-pedidos-ao-vivo')
+    const setupRealtime = (cId: string) => {
+        const channel = supabase.channel('custom-all-channel')
             .on(
                 'postgres_changes',
-                {
-                    event: '*', // Escuta INSERT (novo pedido), UPDATE (mudança de status) e DELETE
-                    schema: 'public',
-                    table: 'Order',
-                    filter: `company_id=eq.${company.id}`
-                },
-                (payload) => {
-                    console.log("⚡ Nova atividade no banco!", payload);
-
-                    // Se for um NOVO pedido (INSERT), toca um aviso sonoro!
-                    if (payload.eventType === 'INSERT') {
-                        try {
-                            // Som de caixa registradora/notificação
-                            const audio = new Audio('https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg');
-                            audio.play().catch(e => console.log('O navegador bloqueou o áudio automático.'));
-                        } catch (e) {
-                            // ignora erros de áudio
-                        }
-                    }
-
-                    // Atualiza os dados na tela instantaneamente
-                    fetchOrders(company.id);
+                { event: '*', schema: 'public', table: 'Order', filter: `company_id=eq.${cId}` },
+                () => {
+                    // Se houver qualquer mudança na tabela Order, recarrega a lista
+                    fetchOrders(cId);
                 }
             )
             .subscribe();
 
-        // Limpa a conexão se o cara fechar a aba
-        return () => {
-            supabase.removeChannel(orderSubscription);
-        };
-    }, [company?.id]);
-
-    const updateOrderStatus = async (orderId: string, currentStatus: string) => {
-        const flow = ['pending', 'preparing', 'ready', 'delivered'];
-        const currentIndex = flow.indexOf(currentStatus);
-        if (currentIndex === -1 || currentIndex === flow.length - 1) return;
-
-        const nextStatus = flow[currentIndex + 1];
-
-        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus as any } : o));
-
-        const { error } = await supabase
-            .from("Order")
-            .update({ status: nextStatus })
-            .eq("id", orderId);
-
-        if (error) {
-            alert("Erro ao atualizar status do pedido.");
-            if (company?.id) fetchOrders(company.id);
-        }
+        return () => { supabase.removeChannel(channel); };
     };
 
-    if (!company && !loading) {
-        return <div className="min-h-screen flex items-center justify-center text-gray-500">Loja não encontrada.</div>;
-    }
+    const updateOrderStatus = async (orderId: string, newStatus: string) => {
+        // Atualiza visualmente na hora para não dar "lag" (Optimistic UI)
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus as any } : o));
+        
+        // Manda pro banco
+        await supabase.from("Order").update({ status: newStatus }).eq("id", orderId);
+    };
+
+    const openWhatsApp = (phone: string, orderId: string, name: string) => {
+        const cleanPhone = phone.replace(/\D/g, '');
+        const shortId = orderId.split('-')[0].toUpperCase();
+        const text = `Olá ${name}, somos da adega! Sobre o seu pedido #${shortId}...`;
+        window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
+    };
+
+    if (loading) return <div className="min-h-screen flex justify-center items-center bg-gray-50"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>;
 
     return (
-        <div className="flex flex-col h-screen bg-gray-100 text-gray-900 font-sans">
-            {/* HEADER OPERACIONAL (Focado na equipe) */}
-            <header className="bg-gray-900 text-white p-4 flex items-center justify-between shrink-0 shadow-md z-10">
-                <div className="flex items-center gap-3">
-                    <div className="bg-white/10 p-2 rounded-lg">
-                        <Store className="w-6 h-6 text-white" />
-                    </div>
+        <div className="min-h-screen bg-gray-100 p-6 font-sans">
+            <div className="max-w-[1400px] mx-auto">
+                <div className="flex items-center justify-between mb-8">
                     <div>
-                        <h1 className="text-xl font-bold leading-none">{company?.name || 'Carregando...'}</h1>
-                        <span className="text-xs text-gray-400 font-medium">Painel Operacional da Cozinha/Balcão</span>
+                        <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Painel Operacional</h1>
+                        <p className="text-gray-500 font-medium mt-1">Gerencie os pedidos em tempo real.</p>
                     </div>
                 </div>
-                <button
-                    onClick={() => company?.id && fetchOrders(company.id)}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold transition-colors active:scale-95"
-                >
-                    <RefreshCcw className="w-4 h-4" /> Atualizar Agora
-                </button>
-            </header>
 
-            {loading && orders.length === 0 ? (
-                <div className="flex-1 flex justify-center items-center">
-                    <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
-                </div>
-            ) : (
-                /* ÁREA DO KANBAN COM CORREÇÃO DE GRID E SCROLL */
-                <main className="flex-1 overflow-x-auto p-6">
-                    {/* O min-w-[1200px] garante que as 4 colunas nunca vão se espremer, resolvendo o bug da coluna sumindo */}
-                    <div className="grid grid-cols-4 gap-6 min-w-[1200px] h-full">
-                        {STATUS_COLUMNS.map((col) => {
-                            const columnOrders = orders.filter(o => o.status === col.id);
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                    {STATUS_COLUMNS.map((column) => {
+                        const columnOrders = orders.filter(o => o.status === column.id);
 
-                            return (
-                                <div key={col.id} className="flex flex-col bg-gray-200/50 rounded-2xl border border-gray-200 overflow-hidden shadow-inner h-full">
-                                    {/* Cabeçalho da Coluna */}
-                                    <div className={`p-4 border-b ${col.borderColor} flex items-center justify-between bg-white shadow-sm z-10`}>
-                                        <div className="flex items-center gap-2 font-bold text-gray-800">
-                                            <div className={`p-1.5 rounded-lg ${col.color}`}>
-                                                <col.icon className="w-5 h-5" />
-                                            </div>
-                                            {col.title}
-                                        </div>
-                                        <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-sm font-bold">
-                                            {columnOrders.length}
-                                        </span>
+                        return (
+                            <div key={column.id} className="bg-gray-200/50 rounded-3xl p-4 min-h-[70vh] flex flex-col gap-4 border border-gray-200">
+                                {/* Cabeçalho da Coluna */}
+                                <div className="flex items-center justify-between mb-2 px-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-3 h-3 rounded-full ${column.color} shadow-sm`}></div>
+                                        <h2 className="font-bold text-gray-800 text-lg">{column.title}</h2>
                                     </div>
+                                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${column.bg} ${column.text}`}>
+                                        {columnOrders.length}
+                                    </span>
+                                </div>
 
-                                    {/* Lista de Cards */}
-                                    <div className="flex-1 p-3 overflow-y-auto space-y-3">
-                                        {columnOrders.map((order) => (
-                                            <div key={order.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
-                                                {/* Faixa de cor baseada no pagamento */}
-                                                <div className={`absolute top-0 left-0 w-1 h-full ${order.payment_status === 'paid' ? 'bg-green-500' : 'bg-orange-500'}`}></div>
+                                {/* Lista de Cards */}
+                                {columnOrders.map(order => {
+                                    const timeStr = new Date(order.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                                    const shortId = order.id.split('-')[0].toUpperCase();
+                                    const isPaid = order.payment_status === 'paid';
+                                    const pm = order.address_details?.paymentMethod;
 
-                                                <div className="pl-2">
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <span className="text-xs font-bold text-gray-400">
-                                                            #{order.id.split('-')[0].toUpperCase()}
-                                                        </span>
-                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded text-white ${order.payment_status === 'paid' ? 'bg-green-500' : 'bg-orange-500'}`}>
-                                                            {order.payment_status === 'paid' ? 'PAGO' : 'NÃO PAGO'}
-                                                        </span>
-                                                    </div>
-
-                                                    <h3 className="font-bold text-gray-900 mb-1 text-lg">{order.customer_name}</h3>
-
-                                                    <div className="space-y-1.5 mt-3 bg-gray-50 p-2.5 rounded-lg border border-gray-100">
-                                                        <p className="text-sm text-gray-700 flex items-center gap-2 font-medium">
-                                                            <Phone className="w-4 h-4 text-blue-500" />
-                                                            {order.customer_phone}
-                                                        </p>
-                                                        <p className="text-sm text-gray-700 flex items-start gap-2 font-medium">
-                                                            <MapPin className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                                                            <span className="line-clamp-3">{order.address_details?.address || 'Retirada no Balcão'}</span>
-                                                        </p>
-                                                        {/* NOVA INFORMAÇÃO DE PAGAMENTO E TROCO */}
-                                                        <div className="mt-2 pt-2 border-t border-gray-200">
-                                                            <p className="text-sm text-gray-700 flex items-start gap-2 font-bold">
-                                                                <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs">
-                                                                    {order.address_details?.paymentMethod || 'Padrão'}
-                                                                </span>
-                                                                {order.address_details?.paymentMethod === 'DINHEIRO' && order.address_details?.changeFor && (
-                                                                    <span className="text-orange-600 bg-orange-100 px-2 py-0.5 rounded text-xs">
-                                                                        Troco p/ R$ {order.address_details?.changeFor}
-                                                                    </span>
-                                                                )}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="mt-4 flex items-center justify-between">
-                                                        <span className="font-extrabold text-blue-600 text-lg">
-                                                            R$ {Number(order.total_price).toFixed(2).replace('.', ',')}
-                                                        </span>
-
-                                                        {col.id !== 'delivered' && (
-                                                            <button
-                                                                onClick={() => updateOrderStatus(order.id, order.status)}
-                                                                className="text-sm font-bold bg-gray-900 text-white px-4 py-2 rounded-xl hover:bg-blue-600 transition-colors active:scale-95 shadow-md shadow-gray-900/20"
-                                                            >
-                                                                Avançar
-                                                            </button>
-                                                        )}
-                                                    </div>
+                                    return (
+                                        <div key={order.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex flex-col gap-4 hover:shadow-md transition-shadow">
+                                            
+                                            {/* HEADER DO CARD */}
+                                            <div className="flex justify-between items-start border-b border-gray-50 pb-3">
+                                                <div>
+                                                    <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded-md">#{shortId}</span>
+                                                    <h3 className="font-bold text-gray-900 mt-2 text-lg leading-tight">{order.customer_name}</h3>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 text-gray-500 text-sm font-medium bg-gray-50 px-2 py-1 rounded-lg">
+                                                    <Clock className="w-4 h-4" /> {timeStr}
                                                 </div>
                                             </div>
-                                        ))}
 
-                                        {columnOrders.length === 0 && (
-                                            <div className="flex flex-col items-center justify-center h-32 text-gray-400 text-sm border-2 border-dashed border-gray-300 rounded-xl bg-gray-50/50">
-                                                <Clock className="w-6 h-6 mb-2 opacity-50" />
-                                                Fila vazia
+                                            {/* ITENS DO PEDIDO (O QUE FALTAVA!) */}
+                                            <div className="bg-orange-50/50 rounded-xl p-3 border border-orange-100/50">
+                                                <h4 className="text-xs font-bold text-orange-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                                    <ShoppingBag className="w-4 h-4" /> Itens do Pedido
+                                                </h4>
+                                                <ul className="space-y-1.5">
+                                                    {order.OrderItem?.map((item: any) => (
+                                                        <li key={item.id} className="text-sm text-gray-700 flex justify-between items-start font-medium">
+                                                            <span><span className="font-bold text-orange-600">{item.quantity}x</span> {item.Product?.name || "Produto excluído"}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
                                             </div>
-                                        )}
+
+                                            {/* DETALHES DE ENTREGA E PAGAMENTO */}
+                                            <div className="grid grid-cols-1 gap-2 text-sm">
+                                                <div className="flex items-start gap-2 text-gray-600">
+                                                    <MapPin className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                                                    <span className="leading-tight">{order.address_details?.address || "Retirada no local"}</span>
+                                                </div>
+                                                
+                                                <div className="flex items-center justify-between mt-2 pt-3 border-t border-gray-50">
+                                                    <div className="flex items-center gap-2">
+                                                        {pm === 'PIX' ? <span className="font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded text-xs flex items-center gap-1"><div className="font-serif leading-none">P</div> PIX</span> : 
+                                                         pm === 'CARTAO' ? <span className="font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded text-xs flex items-center gap-1"><CreditCard className="w-3 h-3" /> Cartão</span> : 
+                                                         <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded text-xs flex items-center gap-1"><Banknote className="w-3 h-3" /> Dinheiro</span>}
+                                                        
+                                                        {/* Badge de Pago/Não Pago */}
+                                                        {isPaid ? 
+                                                            <span className="text-xs font-bold text-green-600 flex items-center gap-0.5"><CheckCircle className="w-3 h-3" /> Pago</span> : 
+                                                            <span className="text-xs font-bold text-red-500">A Cobrar</span>
+                                                        }
+                                                    </div>
+                                                    <span className="font-extrabold text-gray-900 text-lg">R$ {Number(order.total_price).toFixed(2).replace('.', ',')}</span>
+                                                </div>
+
+                                                {/* Aviso de Troco (Se for dinheiro) */}
+                                                {pm === 'DINHEIRO' && order.address_details?.changeFor && (
+                                                    <div className="bg-red-50 text-red-700 px-3 py-2 rounded-lg text-xs font-bold mt-1 border border-red-100">
+                                                        🚨 Levar troco para R$ {Number(order.address_details.changeFor).toFixed(2).replace('.', ',')}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* AÇÕES (BOTÕES) */}
+                                            <div className="grid grid-cols-2 gap-2 mt-2">
+                                                <button 
+                                                    onClick={() => openWhatsApp(order.customer_phone, order.id, order.customer_name)}
+                                                    className="bg-[#25D366] hover:bg-[#20bd5a] text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-sm"
+                                                >
+                                                    <MessageCircle className="w-4 h-4" /> WhatsApp
+                                                </button>
+
+                                                {/* Botão de Avançar Status Dinâmico */}
+                                                {column.id === 'pending' && (
+                                                    <button onClick={() => updateOrderStatus(order.id, 'preparing')} className="bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-colors shadow-sm">
+                                                        Preparar <ChevronRight className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                                {column.id === 'preparing' && (
+                                                    <button onClick={() => updateOrderStatus(order.id, 'delivering')} className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-colors shadow-sm">
+                                                        Despachar <Bike className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                                {column.id === 'delivering' && (
+                                                    <button onClick={() => updateOrderStatus(order.id, 'completed')} className="bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-colors shadow-sm">
+                                                        Entregue <CheckCircle className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                {columnOrders.length === 0 && (
+                                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400 opacity-50 border-2 border-dashed border-gray-300 rounded-2xl mt-2 p-6 text-center">
+                                        <ShoppingBag className="w-8 h-8 mb-2" />
+                                        <p className="text-sm font-medium">Nenhum pedido aqui</p>
                                     </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </main>
-            )}
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
         </div>
     );
 }

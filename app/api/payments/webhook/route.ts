@@ -54,7 +54,7 @@ export async function POST(request: Request) {
                             .from('Order')
                             .update({ 
                                 payment_status: 'paid',
-                                status: 'preparing' // Opcional: já move para "Em Preparação"
+                                
                             })
                             .eq('id', order.id);
                         
