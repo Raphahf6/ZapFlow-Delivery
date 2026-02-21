@@ -27,7 +27,8 @@ export default async function PublicCatalogPage({ params }: { params: Promise<{ 
     const { data: products } = await supabase
         .from("Product")
         .select("*")
-        .eq("company_id", company.id);
+        .eq("company_id", company.id)
+        .eq("in_stock", true);
 
     return <CatalogClient company={company} categories={categories || []} products={products || []} />;
 }

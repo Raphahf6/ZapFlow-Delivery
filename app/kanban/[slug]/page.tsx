@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Loader2, MessageCircle, MapPin, Bike, CheckCircle, Clock, Banknote, CreditCard, ShoppingBag, ChevronRight, Volume2, VolumeX } from "lucide-react";
+import { Loader2, MessageCircle, MapPin, Bike, CheckCircle, Clock, Banknote, CreditCard, ShoppingBag, ChevronRight, Volume2, VolumeX, Printer } from "lucide-react";
 
 type Order = {
     id: string;
@@ -121,6 +121,96 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
         }
     };
 
+    // Nova Função: Imprimir Cupom Térmico
+    const printOrder = (order: Order) => {
+        const timeStr = new Date(order.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = new Date(order.created_at).toLocaleDateString('pt-BR');
+        const shortId = order.id.split('-')[0].toUpperCase();
+        const pm = order.address_details?.paymentMethod;
+        const isPaid = order.payment_status === 'paid' ? 'SIM' : 'NAO';
+
+        // Gera o HTML dos itens
+        const itemsHtml = order.OrderItem?.map((item: any) => `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span>${item.quantity}x ${item.Product?.name || 'Produto'}</span>
+                <span>R$ ${(Number(item.unit_price) * item.quantity).toFixed(2).replace('.', ',')}</span>
+            </div>
+        `).join('');
+
+        // Monta o Cupom (Estilo PDV Clássico)
+        const html = `
+            <html>
+            <head>
+                <title>Cupom #${shortId}</title>
+                <style>
+                    body { 
+                        font-family: 'Courier New', Courier, monospace; 
+                        font-size: 12px; 
+                        margin: 0; 
+                        padding: 10px; 
+                        width: 300px; /* Largura ideal para impressoras 80mm/58mm */
+                        color: #000; 
+                    }
+                    .center { text-align: center; }
+                    .bold { font-weight: bold; }
+                    .divider { border-top: 1px dashed #000; margin: 10px 0; }
+                    .flex-between { display: flex; justify-content: space-between; }
+                </style>
+            </head>
+            <body>
+                <div class="center bold" style="font-size: 16px; margin-bottom: 5px;">${companyName}</div>
+                <div class="center">PEDIDO #${shortId}</div>
+                <div class="center">${dateStr} às ${timeStr}</div>
+                
+                <div class="divider"></div>
+                <div><span class="bold">CLIENTE:</span> ${order.customer_name}</div>
+                <div><span class="bold">TELEFONE:</span> ${order.customer_phone}</div>
+                <div style="margin-top: 5px;"><span class="bold">ENDERECO DE ENTREGA:</span><br/>${order.address_details?.address || 'Retirada no local'}</div>
+                
+                <div class="divider"></div>
+                <div class="bold" style="margin-bottom: 5px;">ITENS DO PEDIDO:</div>
+                ${itemsHtml}
+                
+                <div class="divider"></div>
+                ${order.address_details?.deliveryFee ? `
+                <div class="flex-between" style="margin-bottom: 5px;">
+                    <span>Taxa de Entrega:</span>
+                    <span>R$ ${Number(order.address_details.deliveryFee).toFixed(2).replace('.', ',')}</span>
+                </div>` : ''}
+                <div class="flex-between bold" style="font-size: 14px;">
+                    <span>TOTAL:</span>
+                    <span>R$ ${Number(order.total_price).toFixed(2).replace('.', ',')}</span>
+                </div>
+                
+                <div class="divider"></div>
+                <div><span class="bold">PAGAMENTO:</span> ${pm}</div>
+                <div><span class="bold">STATUS:</span> ${isPaid === 'SIM' ? 'PAGO' : 'A COBRAR'}</div>
+                ${pm === 'DINHEIRO' && order.address_details?.changeFor ? `<div style="margin-top: 5px; font-size: 14px;"><span class="bold">LEVAR TROCO PARA:</span> R$ ${Number(order.address_details.changeFor).toFixed(2).replace('.', ',')}</div>` : ''}
+                
+                <div class="divider"></div>
+                <div class="center" style="margin-top: 20px;">Obrigado pela preferencia!</div>
+                <div class="center" style="margin-top: 5px; font-size: 10px;">Gerado por ZapFlow</div>
+                
+                <script>
+                    window.onload = function() { 
+                        window.print(); 
+                        setTimeout(function() { window.close(); }, 500);
+                    }
+                </script>
+            </body>
+            </html>
+        `;
+
+        // Abre uma janela invisível/pequena e dispara o print
+        const printWindow = window.open('', '_blank', 'width=400,height=600');
+        if (printWindow) {
+            printWindow.document.write(html);
+            printWindow.document.close();
+        } else {
+            alert("Por favor, permita pop-ups no seu navegador para imprimir o pedido.");
+        }
+    };
+
     if (loading) return <div className="min-h-screen flex justify-center items-center bg-gray-50"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div>;
 
     return (
@@ -224,30 +314,42 @@ export default function KanbanPage({ params }: { params: Promise<{ slug: string 
                                                     )}
                                                 </div>
 
-                                                <div className="grid grid-cols-2 gap-2 mt-2">
-                                                    <button 
-                                                        onClick={() => openWhatsApp(order.customer_phone, order.id, order.customer_name)}
-                                                        className="bg-[#25D366] hover:bg-[#20bd5a] text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-sm"
-                                                    >
-                                                        <MessageCircle className="w-4 h-4" /> WhatsApp
-                                                    </button>
+                                                {/* BLOCO DE BOTÕES ATUALIZADO */}
+                                                <div className="flex flex-col gap-2 mt-2">
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <button 
+                                                            onClick={() => openWhatsApp(order.customer_phone, order.id, order.customer_name)}
+                                                            className="bg-[#25D366] hover:bg-[#20bd5a] text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-sm"
+                                                        >
+                                                            <MessageCircle className="w-4 h-4" /> WhatsApp
+                                                        </button>
 
-                                                    {column.id === 'pending' && (
-                                                        <button onClick={() => updateOrderStatus(order.id, 'preparing')} className="bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-colors shadow-sm">
-                                                            Preparar <ChevronRight className="w-4 h-4" />
-                                                        </button>
-                                                    )}
-                                                    {column.id === 'preparing' && (
-                                                        <button onClick={() => updateOrderStatus(order.id, 'delivering')} className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-colors shadow-sm">
-                                                            Despachar <Bike className="w-4 h-4" />
-                                                        </button>
-                                                    )}
-                                                    {column.id === 'delivering' && (
-                                                        <button onClick={() => updateOrderStatus(order.id, 'completed')} className="bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-colors shadow-sm">
-                                                            Entregue <CheckCircle className="w-4 h-4" />
-                                                        </button>
-                                                    )}
+                                                        {column.id === 'pending' && (
+                                                            <button onClick={() => updateOrderStatus(order.id, 'preparing')} className="bg-gray-900 hover:bg-gray-800 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-colors shadow-sm">
+                                                                Preparar <ChevronRight className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                        {column.id === 'preparing' && (
+                                                            <button onClick={() => updateOrderStatus(order.id, 'delivering')} className="bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-colors shadow-sm">
+                                                                Despachar <Bike className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                        {column.id === 'delivering' && (
+                                                            <button onClick={() => updateOrderStatus(order.id, 'completed')} className="bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-1 transition-colors shadow-sm">
+                                                                Entregue <CheckCircle className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    {/* Botão de Impressão Full Width */}
+                                                    <button 
+                                                        onClick={() => printOrder(order)} 
+                                                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors border border-gray-200"
+                                                    >
+                                                        <Printer className="w-4 h-4" /> Imprimir Cupom
+                                                    </button>
                                                 </div>
+
                                             </div>
                                         );
                                     })}

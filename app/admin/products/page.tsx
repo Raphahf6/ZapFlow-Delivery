@@ -7,7 +7,8 @@ import { supabase } from "@/lib/supabase";
 import { Product } from "@/types/database";
 
 export default function ProductsPage() {
-    const [products, setProducts] = useState<Product[]>([]);
+    // Usamos any temporariamente para aceitar o join com a tabela Category
+    const [products, setProducts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
 
@@ -17,21 +18,39 @@ export default function ProductsPage() {
 
     async function fetchProducts() {
         setLoading(true);
+        // Buscamos os produtos e já puxamos o nome da categoria relacionada!
         const { data, error } = await supabase
             .from("Product")
-            .select("*")
+            .select("*, Category(name)")
             .order("created_at", { ascending: false });
 
         if (!error && data) setProducts(data);
         setLoading(false);
     }
 
+    // Função de Liga/Desliga Rápida (Estoque)
+    const toggleStock = async (productId: string, currentStatus: boolean) => {
+        const newStatus = !currentStatus;
+        
+        // 1. Atualiza visualmente na hora (sem esperar o banco) para não dar lag
+        setProducts(prev => prev.map(p => p.id === productId ? { ...p, in_stock: newStatus } : p));
+
+        // 2. Manda a alteração pro Supabase
+        const { error } = await supabase.from("Product").update({ in_stock: newStatus }).eq("id", productId);
+
+        // 3. Se der erro, desfaz a alteração e avisa
+        if (error) {
+            alert("Erro ao atualizar o estoque. Tente novamente.");
+            setProducts(prev => prev.map(p => p.id === productId ? { ...p, in_stock: currentStatus } : p));
+        }
+    };
+
     const filteredProducts = products.filter(p => 
         p.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Catálogo de Produtos</h1>
@@ -39,7 +58,7 @@ export default function ProductsPage() {
                 </div>
                 <Link 
                     href="/admin/products/new"
-                    className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20"
+                    className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 shrink-0"
                 >
                     <Plus className="w-5 h-5" /> Adicionar Produto
                 </Link>
@@ -58,7 +77,7 @@ export default function ProductsPage() {
             </div>
 
             {/* TABELA / LISTA */}
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
                 {loading ? (
                     <div className="p-20 flex justify-center">
                         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -71,38 +90,64 @@ export default function ProductsPage() {
                                     <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Produto</th>
                                     <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Categoria</th>
                                     <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Preço</th>
-                                    <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Estoque</th>
+                                    <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">Disponibilidade</th>
                                     <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-right">Ações</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {filteredProducts.map((product) => (
-                                    <tr key={product.id} className="hover:bg-gray-50 transition-colors">
+                                    <tr key={product.id} className={`transition-colors ${!product.in_stock ? 'bg-gray-50 opacity-75' : 'hover:bg-gray-50'}`}>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-12 h-12 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center shrink-0 border border-gray-200">
+                                                <div className={`w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center shrink-0 border ${product.in_stock ? 'bg-gray-100 border-gray-200' : 'bg-gray-200 border-gray-300 grayscale'}`}>
                                                     {product.image_url ? (
                                                         <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
                                                     ) : (
                                                         <ImageIcon className="w-5 h-5 text-gray-400" />
                                                     )}
                                                 </div>
-                                                <span className="font-semibold text-gray-900">{product.name}</span>
+                                                <div className="flex flex-col">
+                                                    <span className={`font-bold ${product.in_stock ? 'text-gray-900' : 'text-gray-500 line-through'}`}>{product.name}</span>
+                                                </div>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-gray-600">Bebidas</td>
+                                        
+                                        {/* Mostra a categoria real puxada do banco */}
+                                        <td className="px-6 py-4 text-sm font-medium text-gray-600">
+                                            {product.Category?.name || "Sem categoria"}
+                                        </td>
+                                        
                                         <td className="px-6 py-4 font-bold text-gray-900">
                                             R$ {Number(product.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                         </td>
+                                        
                                         <td className="px-6 py-4">
-                                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${product.in_stock ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                                {product.in_stock ? "Em estoque" : "Esgotado"}
-                                            </span>
+                                            <div className="flex items-center gap-3">
+                                                {/* Toggle Switch (Igual ao do Horário Comercial) */}
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        className="sr-only peer" 
+                                                        checked={product.in_stock} 
+                                                        onChange={() => toggleStock(product.id, product.in_stock)} 
+                                                    />
+                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                                                </label>
+                                                <span className={`text-xs font-bold ${product.in_stock ? 'text-green-600' : 'text-gray-400'}`}>
+                                                    {product.in_stock ? 'Ativo' : 'Oculto'}
+                                                </span>
+                                            </div>
                                         </td>
+                                        
                                         <td className="px-6 py-4 text-right">
-                                            <button className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors">
+                                            {/* Botão agora é um Link para a página de edição */}
+                                            <Link 
+                                                href={`/admin/products/${product.id}`}
+                                                className="inline-flex p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"
+                                                title="Editar Produto"
+                                            >
                                                 <Edit3 className="w-5 h-5" />
-                                            </button>
+                                            </Link>
                                         </td>
                                     </tr>
                                 ))}
