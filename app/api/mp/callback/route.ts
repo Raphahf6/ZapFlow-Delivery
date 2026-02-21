@@ -1,19 +1,23 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
-
+import { createClient } from '@supabase/supabase-js';
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
-    const companyId = searchParams.get('state'); // O state que enviamos no handleConnectMP
+    const companyId = searchParams.get('state');
 
-    // 1. Validação básica
     if (!code || !companyId) {
-        console.error("Callback MP: Código ou CompanyId ausentes", { code, companyId });
         return NextResponse.redirect(new URL('/admin/integrations?error=invalid_params', request.url));
     }
 
+    // 1. Criar um cliente Supabase com a Service Role (Admin)
+    // Isso ignora o RLS e não depende de cookies de sessão/cookies expirados
+    const supabaseAdmin = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
     try {
-        // 2. Troca o código pelo Access Token
+        // 2. Trocar código pelo token (mesmo código de antes)
         const response = await fetch('https://api.mercadopago.com/oauth/token', {
             method: 'POST',
             headers: {
@@ -32,13 +36,13 @@ export async function GET(request: Request) {
         const data = await response.json();
 
         if (!response.ok) {
-            console.error("Erro na troca de token MP:", data);
-            return NextResponse.redirect(new URL('/admin/integrations?error=mp_token_exchange_failed', request.url));
+            console.error("Erro MP:", data);
+            return NextResponse.redirect(new URL('/admin/integrations?error=exchange_failed', request.url));
         }
 
-        // 3. SALVAR NO SUPABASE
-        // Importante: Usamos o companyId que veio no 'state'
-        const { error: dbError } = await supabase
+        // 3. Salvar usando o cliente ADMIN (supabaseAdmin)
+        // Como o ID da empresa veio no 'state', o banco saberá exatamente qual linha atualizar
+        const { error: dbError } = await supabaseAdmin
             .from('Company')
             .update({ 
                 mp_access_token: data.access_token 
@@ -46,15 +50,14 @@ export async function GET(request: Request) {
             .eq('id', companyId);
 
         if (dbError) {
-            console.error("Erro ao salvar token no banco:", dbError);
-            return NextResponse.redirect(new URL('/admin/integrations?error=db_save_failed', request.url));
+            console.error("Erro DB Admin:", dbError);
+            throw dbError;
         }
 
-        // 4. Sucesso!
         return NextResponse.redirect(new URL('/admin/integrations?success=mp_connected', request.url));
 
     } catch (error) {
-        console.error("Erro crítico no callback MP:", error);
+        console.error("Erro crítico:", error);
         return NextResponse.redirect(new URL('/admin/integrations?error=server_error', request.url));
     }
 }
